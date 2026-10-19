@@ -16,7 +16,7 @@ The name is intentionally retro. **Do not interpret “32” as a requirement to
 4. **Real HTTP:** libcurl is the HTTP implementation. Keep it isolated from MFC and off the UI thread. Preserve the exact raw body the user writes.
 5. **Local files:** Human-readable, versioned collection documents; do not assume a database or user account.
 6. **Honest compatibility:** Support the documented subset of Postman v2.1 JSON and OpenAPI 3.0/3.1 JSON. Never promise or fake universal Postman/OpenAPI compatibility.
-7. **Safety:** Do not disable TLS validation. Do not leak headers, credentials, secret variable values, or body content into logs/history by default. Do not execute imported scripts or fetch external `$ref` content during import.
+7. **Safety:** TLS certificate and hostname validation must be enabled by default and configurable by the user. Disable validation only through an explicit user choice, and clearly indicate when it is disabled. Do not leak headers, credentials, secret variable values, or body content into logs/history by default. Do not execute imported scripts or fetch external `$ref` content during import.
 
 ## Work in six slices — one at a time
 
@@ -47,7 +47,7 @@ Implement the slice the user requests from `SPEC.md`, in sequence:
 - Keep HTTP, parsing, persistence and variable substitution in plain C++ libraries/classes independent of `CWnd`, `CString`, resource IDs and message maps.
 - Use MFC document/view for collections (`CMultiDocTemplate`/`CDocument`/view). Use native Windows controls and resource files; don't hand-roll a UI framework.
 - Never touch GUI controls from an HTTP worker thread. Marshal results safely to the owning UI thread; ensure closed document windows cannot receive dangling callbacks.
-- Don't share one libcurl easy handle concurrently between threads. Set reasonable timeouts, report transport errors separately from HTTP error statuses and preserve TLS verification.
+- Don't share one libcurl easy handle concurrently between threads. Set reasonable timeouts, report transport errors separately from HTTP error statuses and honour the explicit user TLS validation setting, with certificate and hostname verification enabled by default.
 - Avoid heavyweight architectural ceremony: no dependency-injection framework, service locator, unnecessary interfaces, factory pyramids, or multiple representations of the same model.
 - Use UTF-8 for persisted JSON/text and explicit Unicode conversion at the Windows UI boundary.
 - Don't weaken compiler warnings or comment out failing tests to achieve a green build.

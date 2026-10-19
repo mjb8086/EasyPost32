@@ -76,7 +76,7 @@ EasyPost32 is a lightweight alternative to Postman for developers who need to ma
 | History | Metadata-only local JSONL, or equivalent small on-disk file | No credentials, request body or response body by default |
 | Dependencies | vcpkg manifest (`vcpkg.json`) | Check in manifest and pinned baseline/config as appropriate; not vendored binaries |
 | Build | Visual Studio solution/MSBuild initially | Preserve the MFC App Wizard scaffold; document reproducible build commands |
-| Tests | Native unit tests + local loopback HTTP fixture | No public endpoint or internet required in CI/tests |
+| Tests | Native C++ unit/integration tests + Python FastAPI/Uvicorn loopback fixture | Development-only Python; no product CLI or public endpoint required |
 
 ### Suggested boundaries (adapt to wizard-generated structure)
 
@@ -95,14 +95,23 @@ EasyPost32/
   tests/
     CoreTests/
     ImporterFixtures/
-    LocalHttpServer/   # Small offline loopback fixture if appropriate
+    LocalHttpServer/   # Development-only FastAPI/Uvicorn loopback fixture (Slice 3)
   docs/
     screenshots/       # Optional later
 ```
 
 A generated Visual Studio MFC wizard may create a different file layout. **Do not restructure working wizard code simply to match this illustrative tree.** Keep domain/network/import code independent from `CWnd`, `CString` and other MFC types where reasonably possible, using standard C++ strings and value types at the boundary. Avoid creating six layers of abstractions for a small utility.
 
-My thinking is to use a Python smoke test server powered by the FastAPI framework. Write the test server, and a sample collection to run tests against it. For that purpose, a CLI interface may be required for this application. To be discussed.
+### Local smoke and integration testing
+
+Use a development-only Python FastAPI/Uvicorn fixture bound exclusively to `127.0.0.1`. A standalone native C++ integration-test executable calls the production HTTP core against this real HTTP server; it does not use FastAPI's in-process TestClient. No product CLI or collection runner is required or planned for v0.1.
+
+- **Slice 3:** Add the fixture and native integration tests. Provide deterministic endpoints for method/URL/header inspection, exact raw-body echo, chosen status codes, delays, redirects, large responses and binary responses. Inspect raw request bytes without JSON parsing or re-serialization. Use synthetic data only. TLS checks use local certificates; malformed HTTP or abrupt-disconnect checks may use a small lower-level fixture where needed.
+- **Test lifecycle:** Provide one documented command that starts the fixture on an available loopback port, waits for readiness with a bounded timeout, runs the native tests, propagates test failures through its exit code, and cleans up the server even after failure. Pin Python test dependencies and document setup; dependency restoration may use the network, but test execution must work offline after setup. Disable automatic reload and avoid logging request bodies or sensitive headers.
+- **Slice 4:** Reuse the fixture for manual GUI acceptance checks, with documented requests to enter manually. Native core tests do not replace checks of UI responsiveness, response display or safe document closure while a request is pending.
+- **Slice 5:** Add a synthetic `.dp32.json` sample collection targeting the fixture once the native collection format and save/load support exist. Do not introduce persistence in earlier slices just to supply a sample collection.
+
+Python and its packages are development/test dependencies only. The shipped application must not require Python, launch a local server or make startup network connections.
 
 ### Internal data model (target for Slices 4–5)
 
@@ -200,7 +209,7 @@ Each slice is a **reviewable checkpoint**, not a request to implement everything
 2. Implement method, URL, headers, optional raw UTF-8 bytes/body; collect status, response headers, body and timing.
 3. Use libcurl with certificate verification enabled, sensible timeouts, redirects with a finite maximum, and correct handling of 4xx/5xx.
 4. Run blocking libcurl calls **only** on a worker or in tests; do not call them from a UI message handler.
-5. Write automated integration tests using a **loopback-only** local HTTP server/fixture for GET, POST echo, headers, status codes, timeout, malformed URL, and transport failure.
+5. Write a standalone native C++ integration-test executable using the **loopback-only FastAPI/Uvicorn fixture** and lifecycle command described above for GET, POST echo, headers, status codes, timeout, malformed URL, and transport failure. Exercise the production HTTP core directly; no product CLI is needed.
 6. Add response-size safeguards and binary-body classification/documented handling.
 
 **Acceptance:**
@@ -209,7 +218,7 @@ Each slice is a **reviewable checkpoint**, not a request to implement everything
 - [ ] A 404 response is returned as an HTTP response, not reported as `curl` transport failure.
 - [ ] A connection failure and timeout report useful transport errors.
 - [ ] TLS verification remains enabled by default.
-- [ ] No test depends on a public API or internet access.
+- [ ] No test depends on a public API or internet access after dependency setup; the documented command starts the fixture, runs native tests and cleans up on success or failure.
 - [ ] `Http`/`Core` can be built and tested without launching the MFC GUI.
 
 **Out of scope:** UI plumbing; advanced authentication; importers.
