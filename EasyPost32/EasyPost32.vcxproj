@@ -153,6 +153,8 @@
   <ItemGroup>
     <ClInclude Include="EasyPost32.h" />
     <ClInclude Include="CollectionWindow.h" />
+    <ClInclude Include="RequestDraft.h" />
+    <ClInclude Include="RequestEditor.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
@@ -160,6 +162,7 @@
   <ItemGroup>
     <ClCompile Include="EasyPost32.cpp" />
     <ClCompile Include="CollectionWindow.cpp" />
+    <ClCompile Include="RequestEditor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="EasyPost32.rc" />

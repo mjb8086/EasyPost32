@@ -1,14 +1,28 @@
 #include "framework.h"
 #include "Resource.h"
 #include "CollectionWindow.h"
+#include "RequestEditor.h"
 
 IMPLEMENT_DYNCREATE(CCollectionDoc, CDocument)
-IMPLEMENT_DYNCREATE(CCollectionView, CView)
+IMPLEMENT_DYNCREATE(CCollectionView, CTreeView)
 IMPLEMENT_DYNCREATE(CCollectionFrame, CMDIChildWnd)
 
 BOOL CCollectionDoc::OnNewDocument()
 {
-    return CDocument::OnNewDocument();
+    if (!CDocument::OnNewDocument())
+        return FALSE;
+
+    m_requests = { RequestDraft{ "Request 1" }, RequestDraft{ "Request 2" } };
+    m_selectedRequest = 0;
+    return TRUE;
+}
+
+void CCollectionDoc::SelectRequest(size_t index)
+{
+    if (index >= m_requests.size() || index == m_selectedRequest)
+        return;
+    m_selectedRequest = index;
+    UpdateAllViews(nullptr);
 }
 
 BOOL CCollectionDoc::OnOpenDocument(LPCTSTR)
@@ -23,18 +37,76 @@ BOOL CCollectionDoc::OnSaveDocument(LPCTSTR)
     return FALSE;
 }
 
-void CCollectionView::OnDraw(CDC* dc)
+BEGIN_MESSAGE_MAP(CCollectionView, CTreeView)
+    ON_NOTIFY_REFLECT(TVN_SELCHANGING, &CCollectionView::OnSelectionChanging)
+    ON_NOTIFY_REFLECT(TVN_SELCHANGED, &CCollectionView::OnSelectionChanged)
+END_MESSAGE_MAP()
+
+void CCollectionView::OnInitialUpdate()
 {
-    CRect client;
-    GetClientRect(&client);
-    client.DeflateRect(16, 16);
-    dc->SetBkMode(TRANSPARENT);
-    dc->SetTextColor(GetSysColor(COLOR_WINDOWTEXT));
-    CFont* previous = dc->SelectObject(CFont::FromHandle(
-        static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT))));
-    const CString text = GetDocument()->GetTitle() + L"\n\nEmpty collection";
-    dc->DrawText(text, client, DT_LEFT | DT_TOP | DT_NOPREFIX | DT_WORDBREAK);
-    dc->SelectObject(previous);
+    CTreeView::OnInitialUpdate();
+    auto& tree = GetTreeCtrl();
+    tree.ModifyStyle(0, TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT |
+        TVS_SHOWSELALWAYS | WS_TABSTOP);
+    m_root = tree.InsertItem(GetDocument()->GetTitle());
+    const auto& requests = static_cast<CCollectionDoc*>(GetDocument())->Requests();
+    for (size_t index = 0; index < requests.size(); ++index)
+    {
+        HTREEITEM item = tree.InsertItem(L"", m_root);
+        tree.SetItemData(item, static_cast<DWORD_PTR>(index));
+    }
+    OnUpdate(nullptr, 0, nullptr);
+    tree.Expand(m_root, TVE_EXPAND);
+    tree.SelectItem(tree.GetChildItem(m_root));
+}
+
+void CCollectionView::OnUpdate(CView*, LPARAM, CObject*)
+{
+    if (m_root == nullptr)
+        return;
+    auto& tree = GetTreeCtrl();
+    auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    for (HTREEITEM item = tree.GetChildItem(m_root); item; item = tree.GetNextSiblingItem(item))
+    {
+        const auto& request = document->Requests().at(tree.GetItemData(item));
+        tree.SetItemText(item, FromUtf8(request.method + "  " + request.name));
+    }
+}
+
+void CCollectionView::OnSelectionChanging(NMHDR* header, LRESULT* result)
+{
+    auto* change = reinterpret_cast<NMTREEVIEW*>(header);
+    *result = change->itemNew.hItem == m_root; // The root is a collection label.
+}
+
+void CCollectionView::OnSelectionChanged(NMHDR* header, LRESULT* result)
+{
+    *result = 0;
+    auto* change = reinterpret_cast<NMTREEVIEW*>(header);
+    if (change->itemNew.hItem != m_root)
+        static_cast<CCollectionDoc*>(GetDocument())->SelectRequest(
+            static_cast<size_t>(GetTreeCtrl().GetItemData(change->itemNew.hItem)));
+}
+
+BOOL CCollectionView::PreTranslateMessage(MSG* message)
+{
+    if (message->message == WM_KEYDOWN && message->wParam == VK_TAB &&
+        GetKeyState(VK_CONTROL) >= 0)
+    {
+        auto* splitter = static_cast<CSplitterWnd*>(GetParent());
+        auto* editor = static_cast<CRequestEditor*>(splitter->GetPane(0, 1));
+        editor->FocusEditor(GetKeyState(VK_SHIFT) < 0);
+        return TRUE;
+    }
+    return CTreeView::PreTranslateMessage(message);
+}
+
+BOOL CCollectionFrame::OnCreateClient(LPCREATESTRUCT, CCreateContext* context)
+{
+    const int treeWidth = MulDiv(220, static_cast<int>(GetDpiForWindow(m_hWnd)), 96);
+    return m_splitter.CreateStatic(this, 1, 2) &&
+        m_splitter.CreateView(0, 0, RUNTIME_CLASS(CCollectionView), CSize(treeWidth, 100), context) &&
+        m_splitter.CreateView(0, 1, RUNTIME_CLASS(CRequestEditor), CSize(400, 100), context);
 }
 
 BEGIN_MESSAGE_MAP(CMainFrame, CMDIFrameWnd)

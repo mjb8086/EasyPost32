@@ -21,6 +21,12 @@
     <ClInclude Include="CollectionWindow.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="RequestDraft.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RequestEditor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -36,6 +42,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CollectionWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RequestEditor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -1,5 +1,7 @@
 param(
-    [string]$Executable = (Join-Path $PSScriptRoot '..\x64\Debug\EasyPost32.exe')
+    [string]$Executable = (Join-Path $PSScriptRoot '..\x64\Debug\EasyPost32.exe'),
+    [switch]$Editor,
+    [string]$Screenshot
 )
 
 # Drive the real application through native window/menu messages. No product CLI.
@@ -14,6 +16,7 @@ public static class MdiSmokeNative
 {
     public delegate bool EnumProc(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr data);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string name, string title);
@@ -25,6 +28,21 @@ public static class MdiSmokeNative
     static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetNextDlgTabItem(IntPtr dialog, IntPtr control, bool previous);
+    [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, bool repaint);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GuiThreadInfo {
+        public uint Size, Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public Rect CaretRect;
+    }
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
     [DllImport("user32.dll")] public static extern IntPtr GetMenu(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetSubMenu(IntPtr menu, int index);
     [DllImport("user32.dll")] public static extern int GetMenuItemCount(IntPtr menu);
@@ -35,12 +53,48 @@ public static class MdiSmokeNative
     [DllImport("user32.dll", SetLastError = true)]
     static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam,
         IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode)]
+    static extern IntPtr SendText(IntPtr window, uint message, IntPtr wParam,
+        string text, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode)]
+    static extern IntPtr ReadText(IntPtr window, uint message, IntPtr wParam,
+        StringBuilder text, uint flags, uint timeout, out IntPtr result);
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
 
     public static string Text(IntPtr window) {
         var text = new StringBuilder(512); GetWindowText(window, text, text.Capacity); return text.ToString();
+    }
+    public static string ControlText(IntPtr window) {
+        int count = checked((int)Send(window, 0xE, 0, 0).ToInt64() + 1);
+        var text = new StringBuilder(count); IntPtr result;
+        if (ReadText(window, 0xD, new IntPtr(count), text, 2, 5000, out result) == IntPtr.Zero)
+            throw new Exception("Control text read timed out");
+        return text.ToString();
+    }
+    public static void ReplaceText(IntPtr window, string text) {
+        Send(window, 0xB1, 0, -1); IntPtr result;
+        // EM_REPLACESEL takes the real edit path and emits EN_CHANGE for multiline controls.
+        if (SendText(window, 0xC2, new IntPtr(1), text, 2, 5000, out result) == IntPtr.Zero)
+            throw new Exception("Control text edit timed out");
+    }
+    public static IntPtr Control(IntPtr parent, int id) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, (window, data) => {
+            if (GetDlgCtrlID(window) == id) { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+    public static IntPtr Tree(IntPtr parent) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, (window, data) => {
+            var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
+            if (name.ToString() == "SysTreeView32") { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
     }
     public static IntPtr MainWindow(int process) {
         IntPtr found = IntPtr.Zero;
@@ -70,6 +124,12 @@ public static class MdiSmokeNative
         return text.ToString();
     }
     public static Rect Bounds(IntPtr window) { Rect rect; GetWindowRect(window, out rect); return rect; }
+    public static IntPtr Focus(IntPtr window) {
+        uint process; uint thread = GetWindowThreadProcessId(window, out process);
+        var info = new GuiThreadInfo(); info.Size = (uint)Marshal.SizeOf(info);
+        if (!GetGUIThreadInfo(thread, ref info)) throw new Exception("Cannot query application keyboard focus");
+        return info.Focus;
+    }
 }
 '@
 
@@ -95,13 +155,18 @@ try {
 
     Assert-Check ($main -ne [IntPtr]::Zero -and $client -ne [IntPtr]::Zero) 'Native MDI frame launches'
     Assert-Check ([MdiSmokeNative]::Text($main).Contains('EasyPost32')) 'Application title is EasyPost32'
-    Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 1) 'One empty collection opens at startup'
+    Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 1) 'One collection opens at startup'
     Invoke-CommandId 0xE100
     Invoke-CommandId 0xE100
     $children = @([MdiSmokeNative]::Children($client))
     $titles = @($children | ForEach-Object { [MdiSmokeNative]::Text($_) })
     Assert-Check ($children.Count -eq 3 -and @($titles | Select-Object -Unique).Count -eq 3) 'New creates three independent, distinctly titled children'
     Write-Output "Collections: $($titles -join ', ')"
+
+    if ($Editor) {
+        . (Join-Path $PSScriptRoot 'EditorChecks.ps1')
+        Test-RequestEditor -Children $children -Main $main -Screenshot $Screenshot
+    }
 
     $menu = [MdiSmokeNative]::GetSubMenu([MdiSmokeNative]::GetMenu($main), 1)
     $entries = @(for ($i = 0; $i -lt [MdiSmokeNative]::GetMenuItemCount($menu); ++$i) {

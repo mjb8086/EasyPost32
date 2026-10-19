@@ -1,0 +1,171 @@
+#include "framework.h"
+#include "Resource.h"
+#include "CollectionWindow.h"
+#include "RequestEditor.h"
+#include <algorithm>
+
+CString FromUtf8(const std::string& text)
+{
+    if (text.empty())
+        return {};
+    const int length = static_cast<int>(text.size());
+    const int count = MultiByteToWideChar(CP_UTF8, 0, text.data(), length, nullptr, 0);
+    CString result;
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), length, result.GetBuffer(count), count);
+    result.ReleaseBuffer(count);
+    return result;
+}
+
+namespace
+{
+std::string ToUtf8(const CString& text)
+{
+    if (text.IsEmpty())
+        return {};
+    const int count = WideCharToMultiByte(CP_UTF8, 0, text.GetString(), text.GetLength(),
+        nullptr, 0, nullptr, nullptr);
+    std::string result(static_cast<size_t>(count), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.GetString(), text.GetLength(),
+        result.data(), count, nullptr, nullptr);
+    return result;
+}
+}
+
+IMPLEMENT_DYNCREATE(CRequestEditor, CFormView)
+
+CRequestEditor::CRequestEditor() : CFormView(IDD_REQUEST_EDITOR) {}
+
+BEGIN_MESSAGE_MAP(CRequestEditor, CFormView)
+    ON_WM_SIZE()
+    ON_CBN_SELCHANGE(IDC_REQUEST_METHOD, &CRequestEditor::OnDraftChanged)
+    ON_EN_CHANGE(IDC_REQUEST_URL, &CRequestEditor::OnDraftChanged)
+    ON_EN_CHANGE(IDC_REQUEST_HEADERS, &CRequestEditor::OnDraftChanged)
+    ON_EN_CHANGE(IDC_REQUEST_BODY, &CRequestEditor::OnDraftChanged)
+END_MESSAGE_MAP()
+
+void CRequestEditor::DoDataExchange(CDataExchange* exchange)
+{
+    CFormView::DoDataExchange(exchange);
+    DDX_Control(exchange, IDC_REQUEST_METHOD, m_method);
+    DDX_Control(exchange, IDC_REQUEST_URL, m_url);
+    DDX_Control(exchange, IDC_REQUEST_HEADERS, m_headers);
+    DDX_Control(exchange, IDC_REQUEST_BODY, m_body);
+}
+
+void CRequestEditor::OnInitialUpdate()
+{
+    CFormView::OnInitialUpdate();
+    for (const auto* method : { L"GET", L"POST", L"PUT", L"PATCH", L"DELETE", L"HEAD", L"OPTIONS" })
+        m_method.AddString(method);
+    m_url.SetLimitText(0);
+    m_headers.SetLimitText(0);
+    m_body.SetLimitText(0);
+    m_sourceFont.CreatePointFont(100, L"Consolas");
+    m_headers.SetFont(&m_sourceFont);
+    m_body.SetFont(&m_sourceFont);
+    OnUpdate(nullptr, 0, nullptr);
+    LayoutEditor();
+}
+
+void CRequestEditor::OnUpdate(CView*, LPARAM, CObject*)
+{
+    if (!m_method.GetSafeHwnd())
+        return;
+    m_loading = true;
+    const auto& request = static_cast<CCollectionDoc*>(GetDocument())->CurrentRequest();
+    m_method.SelectString(-1, FromUtf8(request.method));
+    m_url.SetWindowText(FromUtf8(request.url));
+    m_headers.SetWindowText(FromUtf8(request.headersText));
+    m_body.SetWindowText(FromUtf8(request.body));
+    m_loading = false;
+}
+
+void CRequestEditor::OnDraftChanged()
+{
+    if (m_loading || !m_method.GetSafeHwnd() || m_method.GetCurSel() == CB_ERR)
+        return;
+    auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    auto& request = document->CurrentRequest();
+    CString text;
+    m_method.GetLBText(m_method.GetCurSel(), text);
+    request.method = ToUtf8(text);
+    m_url.GetWindowText(text);
+    request.url = ToUtf8(text);
+    m_headers.GetWindowText(text);
+    request.headersText = ToUtf8(text);
+    m_body.GetWindowText(text);
+    request.body = ToUtf8(text);
+    document->UpdateAllViews(this); // Refresh method labels without reloading this editor.
+}
+
+void CRequestEditor::OnSize(UINT type, int width, int height)
+{
+    CFormView::OnSize(type, width, height);
+    LayoutEditor();
+}
+
+void CRequestEditor::LayoutEditor()
+{
+    if (!m_method.GetSafeHwnd() || m_layoutActive)
+        return;
+    m_layoutActive = true;
+    const int dpi = static_cast<int>(GetDpiForWindow(m_hWnd));
+    auto scale = [dpi](int value) { return MulDiv(value, dpi, 96); };
+    CRect client;
+    GetClientRect(client);
+    const int width = (std::max)(client.Width(), scale(460));
+    const int height = (std::max)(client.Height(), scale(360));
+    SetScrollSizes(MM_TEXT, CSize(width, height));
+    const CPoint scroll = GetScrollPosition();
+    auto place = [this, scroll](int id, int x, int y, int cx, int cy)
+    {
+        GetDlgItem(id)->MoveWindow(x - scroll.x, y - scroll.y, cx, cy);
+    };
+    const int margin = scale(10), gap = scale(8), label = scale(20), row = scale(28);
+    const int methodWidth = scale(90), sendWidth = scale(76);
+    const int urlX = margin + methodWidth + gap;
+    const int sendX = width - margin - sendWidth;
+    place(IDC_METHOD_LABEL, margin, margin, methodWidth, label);
+    place(IDC_URL_LABEL, urlX, margin, sendX - gap - urlX, label);
+    // Combo's window height includes its drop-down list, unlike an edit control.
+    place(IDC_REQUEST_METHOD, margin, margin + label, methodWidth, scale(220));
+    place(IDC_REQUEST_URL, urlX, margin + label, sendX - gap - urlX, row);
+    place(IDC_REQUEST_SEND, sendX, margin + label, sendWidth, row);
+    place(IDC_EDITOR_NOTICE, margin, margin + label + row + gap, width - 2 * margin, scale(36));
+    const int headersY = scale(130);
+    const int headersHeight = (std::max)(scale(64), (height - scale(212)) / 3);
+    place(IDC_HEADERS_LABEL, margin, headersY - label, width - 2 * margin, label);
+    place(IDC_REQUEST_HEADERS, margin, headersY, width - 2 * margin, headersHeight);
+    const int bodyY = headersY + headersHeight + gap + label;
+    place(IDC_BODY_LABEL, margin, bodyY - label, width - 2 * margin, label);
+    place(IDC_REQUEST_BODY, margin, bodyY, width - 2 * margin, height - bodyY - margin);
+    m_layoutActive = false;
+}
+
+void CRequestEditor::FocusEditor(bool last)
+{
+    GetParentFrame()->SetActiveView(this);
+    if (last)
+        m_body.SetFocus();
+    else
+        m_method.SetFocus();
+}
+
+BOOL CRequestEditor::PreTranslateMessage(MSG* message)
+{
+    if (message->message == WM_KEYDOWN && message->wParam == VK_TAB &&
+        GetKeyState(VK_CONTROL) >= 0)
+    {
+        const bool backwards = GetKeyState(VK_SHIFT) < 0;
+        if ((!backwards && message->hwnd == m_body.m_hWnd) ||
+            (backwards && message->hwnd == m_method.m_hWnd))
+        {
+            auto* splitter = static_cast<CSplitterWnd*>(GetParent());
+            auto* tree = static_cast<CView*>(splitter->GetPane(0, 0));
+            GetParentFrame()->SetActiveView(tree);
+            tree->SetFocus();
+            return TRUE;
+        }
+    }
+    return CFormView::PreTranslateMessage(message);
+}
