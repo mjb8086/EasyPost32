@@ -1,9 +1,9 @@
-# Standalone HTTP engine — Slice 3
+# Standalone HTTP engine and workers — Slices 3–4
 
 `HttpClient.h/.cpp` is a C++20/libcurl library with no MFC, window, resource,
 JSON, persistence, or logging dependencies. `Execute` is blocking; call it only
-in tests or on a worker. The GUI does not reference it in this slice, and Send
-stays disabled. Each execution owns its easy handle and request-header list.
+in tests or on a worker. The GUI now uses `HttpJobs` to execute it asynchronously.
+Each execution owns its easy handle and request-header list.
 libcurl initialization is thread-safe and lazy, with process-lifetime cleanup.
 
 ## Build and test
@@ -73,22 +73,52 @@ build/test does not access package registries after setup.
   reports bytes transferred, which can exceed bytes retained on a limit error.
 - Text classification requires valid UTF-8 without binary control characters
   (Tab/CR/LF are allowed). Invalid UTF-8, embedded NULs and other binary content
-  remain byte data; a future viewer must show a safe placeholder. This is a
+  remain byte data; the GUI displays a safe placeholder. This is a
   conservative byte heuristic, not a MIME renderer or general encoding detector.
 - Certificate-chain and hostname verification are enabled by default. Windows
   trust roots and Schannel's revocation checks remain intact. `caFile` can supply
   explicit PEM roots without modifying trust stores; `verifyTls=false` is an
   explicit caller choice, reported by `tlsVerificationEnabled` in the response.
-  No revocation-bypass option is set. There is no GUI TLS setting until GUI
-  execution is implemented.
+  No revocation-bypass option is set. The GUI checkbox defaults to verification
+  enabled, is locked during the transfer, and warns explicitly when disabled.
 - Connections are direct: environment proxy variables are not used. Cookie
   persistence, advanced authentication, compressed-content decoding, upload
-  streaming and cancellation are not implemented. Calls can run concurrently;
+  streaming are not implemented. `HttpOptions::cancellation` accepts a C++20
+  stop token; a pre-cancelled call performs no transfer and libcurl's progress
+  callback interrupts active transfers with `TransportErrorKind::Cancelled`.
+  OS DNS/TLS work can delay observation of cancellation. Calls can run concurrently;
   a handle is never shared between threads.
 - No request/response content is logged or persisted. Diagnostics use generic
   libcurl error descriptions, without copying request data. `finalUrl`, headers
   and bodies in the returned value are sensitive caller data and must not be
-  blindly logged when GUI/history integration is added.
+  blindly logged or persisted.
+
+## Worker ownership and UI completion
+
+`HttpJobs` is independent of MFC. The application owns its registry of threads,
+and each worker captures a value snapshot of the request/options and a shared
+`HttpJob`. A job owns its stop source, result and atomic completion flag. A
+release/acquire publication makes the immutable response safe to read after
+`Done()`; callers must not inspect `Response()` earlier. Unexpected worker
+exceptions leave a preallocated generic error, and never escape the thread.
+Completed workers are joined and reaped during UI dispatch or before a new job.
+
+Each collection owns per-request job references and cancels them on destruction.
+Its editor uses a 100 ms Windows timer as the UI-thread completion dispatcher;
+only that dispatcher updates views. Workers hold no `CWnd`, `CDocument`, HWND,
+callback or document pointer and never post completion messages to child windows.
+Closing a child destroys its timer immediately; the application retains and
+eventually joins its worker safely. Application exit requests cancellation for
+all jobs and joins them before libcurl cleanup. Requests can run independently
+across selections/documents; the same request cannot be sent again until its
+completion has been dispatched. No detached threads are used.
+
+`RequestComposer` converts the editable draft to transport values without MFC.
+It parses nonempty `Name: value` header lines, preserves repeats/order and
+retains all body bytes. One conventional space after the colon is removed when
+forming header values; the stored header text is unchanged. Incomplete lines
+produce safe line-number diagnostics before sending. The HTTP core validates
+tokens, protocols and injection safeguards independently.
 
 The explicit length/body behavior follows the official
 [POSTFIELDS documentation](https://curl.se/libcurl/c/CURLOPT_POSTFIELDS.html).
@@ -113,11 +143,16 @@ The native tests prove exact GET/POST/PUT/PATCH/DELETE/OPTIONS requests, HEAD,
 empty/binary POST, HTTP errors, refusal, timeout, invalid inputs, redirect
 semantics/limits/origin blocking, body/header limits, classification, truncated
 responses, default TLS rejection, explicit local trust, wrong-host rejection,
-explicit validation disablement and independent concurrent requests.
+explicit validation disablement, independent concurrent requests, editor body
+composition, safe header diagnostics, pre-cancellation, worker snapshots,
+in-flight cancellation and safe release of document-owned job references.
 
 There is no public endpoint dependency, account, product CLI, sample collection
 file or test-time package restoration. The saved `.dp32.json` fixture collection
-belongs to Slice 5; GUI fixture checks belong to Slice 4. Fixture/test binaries
+belongs to Slice 5. `tests/TestGuiHttp.ps1` now reuses these fixtures for real
+GUI checks; `-Manual` prints addresses and keeps the fixtures alive until the
+ordinary GUI instance exits. See the main README for exact manual requests.
+Fixture/test binaries
 and Python are development tools, not application startup dependencies.
 
 ## Verification
@@ -133,6 +168,11 @@ and Python are development tools, not application startup dependencies.
   or system certificate-store modification was introduced.
 - Failed native tests returned nonzero and their fixtures/temporary keys were
   cleaned up; successful runs also left no fixture directories behind.
+- Slice 4 adds six native composition/worker/cancellation checks, passing all
+  35 native checks in both Debug and Release. Both full solution builds passed
+  without reported compiler warnings/errors, and both GUI suites passed all 98
+  checks. GUI checks now cover response display, concurrent
+  editing, duplicate sends, TLS configuration and pending document/application
+  closure. See the main README for verification commands and manual limitations.
 - Public-service interoperability, other TLS backends, arbitrary proxy setups
-  and non-Windows builds were not tested. GUI response handling and pending
-  document closure are Slice 4 work and are not implemented here.
+  and non-Windows builds were not tested.

@@ -1,4 +1,6 @@
 #include "../../Http/HttpClient.h"
+#include "../../Http/HttpJobs.h"
+#include "../../RequestComposer.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <future>
@@ -323,6 +325,86 @@ int main(int argc, char** argv)
             Success(response);
             Require(response.body == std::to_string(i), "Concurrent request state leaked");
         }
+    });
+    test("Editor composition preserves body bytes and repeated header order", [&]
+    {
+        RequestDraft draft;
+        draft.method = "PATCH";
+        draft.url = base + "/inspect?literal=%2F+a";
+        draft.headersText = "X-Repeat: one\r\nX-Repeat: two\r\n\r\nX-Empty:\r\n";
+        draft.body = "{\r\n\t\"raw\" : [ 1,  2 ]\r\n}\r\n  ";
+        HttpRequest request;
+        std::string error;
+        Require(ComposeRequest(draft, request, error), "Valid editor headers rejected");
+        Require(request.body == draft.body && request.headers.size() == 3 &&
+            request.headers[1] == Header{"X-Repeat", "two"}, "Editor draft changed");
+        const auto response = Execute(request);
+        Success(response);
+        Require(json::parse(response.body)["body_hex"] == Hex(draft.body), "Composed body rewritten");
+    });
+    test("Incomplete editor headers fail with a safe line-number diagnostic", [&]
+    {
+        RequestDraft draft;
+        draft.headersText = "X-First: ok\r\nsynthetic-secret-without-colon";
+        HttpRequest request;
+        std::string error;
+        Require(!ComposeRequest(draft, request, error) && error.find("line 2") != error.npos &&
+            error.find("synthetic-secret") == error.npos, "Header diagnostic unsafe or unclear");
+    });
+    test("Pre-cancelled request performs no transfer", [&]
+    {
+        std::stop_source stop;
+        stop.request_stop();
+        HttpOptions options;
+        options.cancellation = stop.get_token();
+        HttpRequest request;
+        request.url = base + "/ready";
+        const auto response = Execute(request, options);
+        Failure(response, TransportErrorKind::Cancelled);
+        Require(response.status == 0 && response.downloadedBytes == 0, "Cancelled request transferred data");
+    });
+    test("Worker owns a snapshot and publishes a complete response", [&]
+    {
+        HttpJobs jobs;
+        HttpRequest request;
+        request.method = "POST";
+        request.url = base + "/echo";
+        request.body = "snapshot";
+        auto job = jobs.Start(request, {});
+        request.body = "edited afterwards";
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!job->Done() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        Require(job->Done(), "Worker failed to complete");
+        jobs.Reap();
+        Success(job->Response());
+        Require(job->Response().body == "snapshot", "Worker referenced a mutable draft");
+    });
+    test("Cancellation interrupts a pending worker", [&]
+    {
+        HttpJobs jobs;
+        HttpRequest request;
+        request.url = base + "/delay/3000";
+        auto job = jobs.Start(request, {});
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        job->Cancel();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!job->Done() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        Require(job->Done(), "Cancellation did not interrupt the transfer");
+        Failure(job->Response(), TransportErrorKind::Cancelled);
+    });
+    test("Dropping a document's job reference does not destroy a running worker", [&]
+    {
+        HttpJobs jobs;
+        HttpRequest request;
+        request.url = base + "/delay/3000";
+        auto job = jobs.Start(request, {});
+        std::weak_ptr<HttpJob> observer = job;
+        job->Cancel();
+        job.reset();
+        jobs.Shutdown();
+        Require(observer.expired(), "Shutdown retained the worker job");
     });
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;

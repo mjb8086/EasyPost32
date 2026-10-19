@@ -162,7 +162,8 @@ std::size_t HeaderCallback(char* data, std::size_t size, std::size_t count, void
 TransportError Error(CURLcode code)
 {
     auto kind = TransportErrorKind::Other;
-    if (code == CURLE_OPERATION_TIMEDOUT) kind = TransportErrorKind::Timeout;
+    if (code == CURLE_ABORTED_BY_CALLBACK) kind = TransportErrorKind::Cancelled;
+    else if (code == CURLE_OPERATION_TIMEDOUT) kind = TransportErrorKind::Timeout;
     else if (code == CURLE_COULDNT_CONNECT || code == CURLE_COULDNT_RESOLVE_HOST)
         kind = TransportErrorKind::Connection;
     else if (code == CURLE_PEER_FAILED_VERIFICATION || code == CURLE_SSL_CONNECT_ERROR ||
@@ -171,6 +172,11 @@ TransportError Error(CURLcode code)
     else if (code == CURLE_URL_MALFORMAT || code == CURLE_UNSUPPORTED_PROTOCOL)
         kind = TransportErrorKind::InvalidRequest;
     return { kind, static_cast<int>(code), curl_easy_strerror(code) };
+}
+
+int ProgressCallback(void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t) noexcept
+{
+    return static_cast<const HttpOptions*>(context)->cancellation.stop_requested() ? 1 : 0;
 }
 }
 
@@ -237,6 +243,11 @@ HttpResponse Execute(const HttpRequest& request, const HttpOptions& options)
         bool redirectedToGet = false;
         for (;;)
         {
+            if (options.cancellation.stop_requested())
+            {
+                result.error = Error(CURLE_ABORTED_BY_CALLBACK);
+                break;
+            }
             const auto remaining = options.totalTimeout -
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
             if (remaining.count() <= 0) { result.error = Error(CURLE_OPERATION_TIMEDOUT); break; }
@@ -255,6 +266,9 @@ HttpResponse Execute(const HttpRequest& request, const HttpOptions& options)
             set(CURLOPT_PROTOCOLS_STR, "http,https");
             set(CURLOPT_PROXY, ""); // Explicit direct connections, independent of proxy environment variables.
             set(CURLOPT_NOSIGNAL, 1L);
+            set(CURLOPT_NOPROGRESS, 0L);
+            set(CURLOPT_XFERINFOFUNCTION, &ProgressCallback);
+            set(CURLOPT_XFERINFODATA, &options);
             set(CURLOPT_PATH_AS_IS, 1L);
             set(CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>((std::min)(remaining, options.connectTimeout).count()));
             set(CURLOPT_TIMEOUT_MS, static_cast<long>(remaining.count()));

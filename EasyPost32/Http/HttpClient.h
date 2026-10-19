@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -29,12 +30,13 @@ struct HttpOptions
     int maxRedirects = 5; // Same-origin HTTP(S) redirects only.
     bool verifyTls = true; // Controls certificate chain AND hostname verification.
     std::string caFile; // Optional PEM trust roots; empty uses the native trust store.
+    std::stop_token cancellation;
 };
 
 enum class TransportErrorKind
 {
     InvalidRequest, Initialization, Connection, Timeout, Tls, RedirectLimit,
-    RedirectBlocked, ResponseTooLarge, HeadersTooLarge, Other
+    RedirectBlocked, ResponseTooLarge, HeadersTooLarge, Cancelled, Other
 };
 
 struct TransportError

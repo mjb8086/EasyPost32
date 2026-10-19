@@ -19,10 +19,15 @@ protected:
     BOOL PreTranslateMessage(MSG* message) override;
     afx_msg void OnSize(UINT type, int width, int height);
     afx_msg void OnDraftChanged();
+    afx_msg void OnSend();
+    afx_msg void OnCancel();
+    afx_msg void OnTimer(UINT_PTR timer);
+    afx_msg void OnDestroy();
     DECLARE_MESSAGE_MAP()
 
 private:
     void LayoutEditor();
+    void UpdateActions();
     CComboBox m_method;
     CEdit m_url;
     CEdit m_headers;

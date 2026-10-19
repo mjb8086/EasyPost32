@@ -18,7 +18,11 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <Import Project="NativeHttp.props" />
-  <ItemGroup><ClInclude Include="HttpClient.h" /><ClCompile Include="HttpClient.cpp" /></ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HttpClient.h" /><ClCompile Include="HttpClient.cpp" />
+    <ClInclude Include="HttpJobs.h" /><ClCompile Include="HttpJobs.cpp" />
+    <ClInclude Include="..\RequestComposer.h" /><ClCompile Include="..\RequestComposer.cpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(VcpkgRoot)scripts\buildsystems\msbuild\vcpkg.targets" />
 </Project>

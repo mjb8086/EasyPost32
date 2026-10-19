@@ -2,10 +2,19 @@
 #include "Resource.h"
 #include "CollectionWindow.h"
 #include "RequestEditor.h"
+#include "ResponseView.h"
+#include "RequestComposer.h"
+#include "EasyPost32.h"
 
 IMPLEMENT_DYNCREATE(CCollectionDoc, CDocument)
 IMPLEMENT_DYNCREATE(CCollectionView, CTreeView)
 IMPLEMENT_DYNCREATE(CCollectionFrame, CMDIChildWnd)
+
+CCollectionDoc::~CCollectionDoc()
+{
+    for (auto& run : m_runs)
+        if (run.job) run.job->Cancel();
+}
 
 BOOL CCollectionDoc::OnNewDocument()
 {
@@ -14,7 +23,62 @@ BOOL CCollectionDoc::OnNewDocument()
 
     m_requests = { RequestDraft{ "Request 1" }, RequestDraft{ "Request 2" } };
     m_selectedRequest = 0;
+    m_runs.resize(m_requests.size());
     return TRUE;
+}
+
+void CCollectionDoc::Send()
+{
+    auto& run = m_runs.at(m_selectedRequest);
+    if (run.Pending() || CurrentRequest().url.empty()) return;
+    easypost::HttpRequest request;
+    std::string error;
+    if (!ComposeRequest(CurrentRequest(), request, error))
+    {
+        run = {};
+        run.preparationError = std::move(error);
+    }
+    else
+    {
+        try
+        {
+            easypost::HttpOptions options;
+            options.verifyTls = CurrentRequest().verifyTls;
+            auto job = theApp.httpJobs.Start(std::move(request), options);
+            run = {};
+            run.job = std::move(job);
+        }
+        catch (...)
+        {
+            run = {};
+            run.preparationError = "Unable to start the HTTP worker.";
+        }
+    }
+    UpdateAllViews(nullptr, 1);
+}
+
+void CCollectionDoc::Cancel()
+{
+    auto& run = m_runs.at(m_selectedRequest);
+    if (run.Pending())
+    {
+        run.cancelling = true;
+        run.job->Cancel();
+        UpdateAllViews(nullptr, 1);
+    }
+}
+
+void CCollectionDoc::PollCompletions()
+{
+    bool changed = false;
+    for (auto& run : m_runs)
+        if (run.Pending() && run.job->Done())
+        {
+            run.completionDispatched = true;
+            changed = true;
+        }
+    theApp.httpJobs.Reap();
+    if (changed) UpdateAllViews(nullptr, 1);
 }
 
 void CCollectionDoc::SelectRequest(size_t index)
@@ -93,9 +157,11 @@ BOOL CCollectionView::PreTranslateMessage(MSG* message)
     if (message->message == WM_KEYDOWN && message->wParam == VK_TAB &&
         GetKeyState(VK_CONTROL) >= 0)
     {
-        auto* splitter = static_cast<CSplitterWnd*>(GetParent());
-        auto* editor = static_cast<CRequestEditor*>(splitter->GetPane(0, 1));
-        editor->FocusEditor(GetKeyState(VK_SHIFT) < 0);
+        auto* frame = static_cast<CCollectionFrame*>(GetParentFrame());
+        if (GetKeyState(VK_SHIFT) < 0)
+            static_cast<CResponseView*>(frame->Response())->FocusResponse(true);
+        else
+            static_cast<CRequestEditor*>(frame->Editor())->FocusEditor(false);
         return TRUE;
     }
     return CTreeView::PreTranslateMessage(message);
@@ -104,9 +170,66 @@ BOOL CCollectionView::PreTranslateMessage(MSG* message)
 BOOL CCollectionFrame::OnCreateClient(LPCREATESTRUCT, CCreateContext* context)
 {
     const int treeWidth = MulDiv(220, static_cast<int>(GetDpiForWindow(m_hWnd)), 96);
+    CRect client;
+    GetClientRect(client);
+    const int requestHeight = client.Height() * 3 / 5;
     return m_splitter.CreateStatic(this, 1, 2) &&
         m_splitter.CreateView(0, 0, RUNTIME_CLASS(CCollectionView), CSize(treeWidth, 100), context) &&
-        m_splitter.CreateView(0, 1, RUNTIME_CLASS(CRequestEditor), CSize(400, 100), context);
+        m_rightSplitter.CreateStatic(&m_splitter, 2, 1, WS_CHILD | WS_VISIBLE,
+            m_splitter.IdFromRowCol(0, 1)) &&
+        m_rightSplitter.CreateView(0, 0, RUNTIME_CLASS(CRequestEditor),
+            CSize(400, requestHeight), context) &&
+        m_rightSplitter.CreateView(1, 0, RUNTIME_CLASS(CResponseView), CSize(400, 200), context);
+}
+
+BEGIN_MESSAGE_MAP(CResponseSplitter, CSplitterWnd)
+    ON_WM_SIZE()
+END_MESSAGE_MAP()
+
+void CResponseSplitter::OnSize(UINT type, int width, int height)
+{
+    if (m_nRows == 2 && m_previousHeight > 0 && height > 0)
+    {
+        int rowHeight = 0, minimum = 0;
+        GetRowInfo(0, rowHeight, minimum);
+        SetRowInfo(0, MulDiv(rowHeight, height, m_previousHeight), minimum);
+    }
+    m_previousHeight = height;
+    CSplitterWnd::OnSize(type, width, height);
+}
+
+BEGIN_MESSAGE_MAP(CCollectionFrame, CMDIChildWnd)
+    ON_COMMAND(ID_REQUEST_SEND, &CCollectionFrame::OnSend)
+    ON_COMMAND(ID_REQUEST_CANCEL, &CCollectionFrame::OnCancel)
+    ON_UPDATE_COMMAND_UI(ID_REQUEST_SEND, &CCollectionFrame::OnUpdateSend)
+    ON_UPDATE_COMMAND_UI(ID_REQUEST_CANCEL, &CCollectionFrame::OnUpdateCancel)
+    ON_COMMAND(ID_COLLECTION_NEXT_PANE, &CCollectionFrame::OnNextPane)
+    ON_COMMAND(ID_COLLECTION_PREV_PANE, &CCollectionFrame::OnPreviousPane)
+END_MESSAGE_MAP()
+
+void CCollectionFrame::OnSend() { static_cast<CCollectionDoc*>(GetActiveDocument())->Send(); }
+void CCollectionFrame::OnCancel() { static_cast<CCollectionDoc*>(GetActiveDocument())->Cancel(); }
+void CCollectionFrame::OnUpdateSend(CCmdUI* command)
+{
+    auto* document = static_cast<CCollectionDoc*>(GetActiveDocument());
+    command->Enable(document && !document->CurrentRequest().url.empty() && !document->CurrentRun().Pending());
+}
+void CCollectionFrame::OnUpdateCancel(CCmdUI* command)
+{
+    auto* document = static_cast<CCollectionDoc*>(GetActiveDocument());
+    command->Enable(document && document->CurrentRun().Pending() && !document->CurrentRun().cancelling);
+}
+void CCollectionFrame::OnNextPane()
+{
+    if (GetActiveView() == Tree()) static_cast<CRequestEditor*>(Editor())->FocusEditor(false);
+    else if (GetActiveView() == Editor()) static_cast<CResponseView*>(Response())->FocusResponse(false);
+    else { SetActiveView(Tree()); Tree()->SetFocus(); }
+}
+void CCollectionFrame::OnPreviousPane()
+{
+    if (GetActiveView() == Tree()) static_cast<CResponseView*>(Response())->FocusResponse(false);
+    else if (GetActiveView() == Response()) static_cast<CRequestEditor*>(Editor())->FocusEditor(false);
+    else { SetActiveView(Tree()); Tree()->SetFocus(); }
 }
 
 BEGIN_MESSAGE_MAP(CMainFrame, CMDIFrameWnd)

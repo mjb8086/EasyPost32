@@ -35,6 +35,18 @@ async def inspect(request: Request):
     return response
 
 
+@app.api_route("/slow-inspect", methods=METHODS)
+async def slow_inspect(request: Request):
+    app.state.send_count = getattr(app.state, "send_count", 0) + 1
+    await asyncio.sleep(2)
+    return await inspect(request)
+
+
+@app.get("/send-count")
+async def send_count():
+    return PlainTextResponse(str(getattr(app.state, "send_count", 0)))
+
+
 @app.api_route("/echo", methods=METHODS)
 async def echo(request: Request):
     return Response(await request.body(), media_type="application/octet-stream")

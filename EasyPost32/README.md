@@ -1,9 +1,10 @@
-# EasyPost32 — Slice 3 HTTP engine and local tests
+# EasyPost32 — Slice 4 Send and response viewer
 
 This project uses C++20, MFC document/view and classic MDI child windows.
 Each collection has a separate `CCollectionDoc` and `CCollectionFrame`, with a
 native splitter between a request tree (`CCollectionView`) and an editor
-(`CRequestEditor`). The main frame has native menus, a text toolbar and a status
+(`CRequestEditor`), plus a second splitter above the response (`CResponseView`).
+The main frame has native menus, a text toolbar and a status
 bar. One collection opens at startup; Ctrl+N creates another.
 
 Each collection starts with two blank requests. Edit GET, POST, PUT, PATCH,
@@ -14,9 +15,31 @@ the Windows UI boundary. Repeated headers and unfinished header lines remain
 editable source text; raw bodies are never parsed or reformatted.
 
 **All edits are in memory only. Closing a collection discards its edits.**
-Send and Open are disabled. The standalone libcurl engine is implemented and
-tested independently of MFC; GUI transmission begins in Slice 4. Collection
-files, variables, history and import/export have not been implemented.
+Send snapshots the current request and runs libcurl on a worker. The response
+pane displays HTTP status, elapsed milliseconds, received/sent body bytes,
+redirect count, final response headers and the unformatted UTF-8 body. Binary
+or invalid UTF-8 content gets a safe placeholder. HTTP 4xx/5xx responses retain
+their normal status and body; transport failures and partial responses are
+identified separately. No request or response content is logged or persisted.
+
+Use Send or **Request > Send (Ctrl+Enter)**; **Cancel (Esc)** interrupts a pending
+transfer. Each request has its own pending/result state; repeated Send is blocked
+until that request completes. Other requests and collections remain usable.
+Edits made while sending affect the next Send; the displayed response belongs
+to the last Send. Tab/Shift+Tab traverse tree, editor and response controls;
+F6/Shift+F6 switch those three panes.
+
+**Verify TLS certificate and hostname** is checked by default for each request.
+Unchecking it is an explicit override, shown by a warning in the editor and on
+the resulting response. This setting is locked during its pending transfer;
+re-enabling it does not hide the warning on an earlier unverified response.
+Timeouts remain 5 seconds to connect and 30 seconds total. Closing a collection
+cancels its jobs without waiting on the UI thread. Exiting cancels and joins
+remaining workers before libcurl cleanup; OS DNS/TLS calls can briefly delay
+process exit before observing cancellation.
+
+Open remains disabled. Collection files, variables, history and import/export
+have not been implemented. The application has no product CLI or local server.
 
 See [Http/README.md](Http/README.md) for HTTP behavior, dependency setup, the
 single-command integration tests and their loopback-only TLS fixtures.
@@ -28,8 +51,9 @@ single-command integration tests and their loopback-only TLS fixtures.
   a Windows SDK, and **C++ MFC for x64/x86 (Latest MSVC)**.
 - The project uses MFC in a shared DLL. Debug builds require the matching
   development runtime supplied by Visual Studio.
-- HTTP engine/tests: Visual Studio's bundled vcpkg (or `VCPKG_ROOT`) and Python
-  3.13, with dependencies restored once via `tests\SetupHttp.ps1`.
+- Build: Visual Studio's bundled vcpkg (or `VCPKG_ROOT`) and restored native
+  dependencies. Tests also require Python 3.13. `tests\SetupHttp.ps1` restores
+  both once. Running the built application does not require Python.
 
 If MSBuild reports `MSB8041`, close Visual Studio and its related processes,
 open Visual Studio Installer, choose Modify for the installation, and select
@@ -39,24 +63,27 @@ Do not force-close an IDE with unsaved work.
 
 ## Build and run
 
-From this project directory in a Developer PowerShell for Visual Studio:
+Restore dependencies once before building the GUI or solution. From this
+project directory in a Developer PowerShell for Visual Studio:
 
 ```powershell
+powershell.exe -NoProfile -File .\tests\SetupHttp.ps1
 msbuild .\EasyPost32.vcxproj /p:Configuration=Debug /p:Platform=x64 /m /nologo
 msbuild .\EasyPost32.vcxproj /p:Configuration=Release /p:Platform=x64 /m /nologo
 & .\x64\Debug\EasyPost32.exe
 ```
 
-To build the whole solution, first restore the HTTP dependencies:
+To build the whole solution and run standalone HTTP tests:
 
 ```powershell
-powershell.exe -NoProfile -File .\tests\SetupHttp.ps1
 msbuild .\EasyPost32.slnx /p:Configuration=Debug /p:Platform=x64 /m /nologo
 powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug
 ```
 
 Normal HTTP test runs use only loopback sockets and work offline after setup.
 They build the standalone engine/test target without launching the GUI.
+The GUI build references `Http.lib` and deploys matching curl/zlib DLLs next to
+the executable. Only x64 builds are supported by the HTTP dependency setup.
 
 Outside a Developer PowerShell, locate MSBuild from the installed Visual Studio:
 
@@ -88,7 +115,7 @@ original Win32 project is not verification of the MFC scaffold.
 5. Resize the application and inspect the menu, toolbar, status bar and child
    text. Check keyboard menu access, and repeat at the intended display scale.
 6. Launch while disconnected from the network. Confirm no sign-in, online
-   setup or network dependency. The GUI performs no startup requests or HTTP execution.
+   setup or network dependency. The GUI performs no startup HTTP requests.
 7. Exit normally, including with multiple empty children still open.
 
 ## Native MDI smoke check
@@ -109,7 +136,8 @@ powershell.exe -NoProfile -File .\tests\SmokeMdi.ps1 -Editor -Executable .\x64\R
 `-Editor` also loads `tests\EditorChecks.ps1`. It verifies all editor fields,
 exact Unicode/whitespace round trips, repeated and unfinished headers, bodies
 larger than 32 KiB, independent requests/documents, native resizing and splitter
-dragging, Tab traversal, F6 pane switching, Enter in the body, and disabled Send.
+dragging, Tab traversal, F6 pane switching, Enter in the body, and Send disabled
+for an empty URL. It does not send any request without the HTTP fixture options.
 The test briefly displays its own application instance to exercise focus.
 
 An optional `-Screenshot .\build\editor.png` captures only that application
@@ -129,9 +157,54 @@ a scoped command approval for this script to avoid repeated desktop prompts.
    accessible. Small windows scroll the form instead of shrinking fields away.
    Check Tab/Shift+Tab through tree, method, URL, headers and body, F6/Shift+F6
    between panes, and Enter inserting newlines in the raw body.
-5. Confirm Send stays disabled and the notice explains that sending is
-   unavailable. No fabricated response or pending/success state is displayed.
+5. Confirm Send is disabled for an empty URL and enabled after entering one.
+   Before the first Send, the response pane says Ready and contains no response.
 6. Close the collection only when its temporary edits are no longer needed.
+
+## Slice 4 GUI integration and manual checks
+
+```powershell
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release
+# Optional window-only screenshot using synthetic fixture data:
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -SkipBuild -Screenshot .\build\response.png
+# Leave fixtures running for manual testing until this GUI instance exits:
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -SkipBuild -Manual
+```
+
+The automatic command builds, starts private HTTP/TLS fixtures on ephemeral
+loopback ports, drives a separate GUI instance using native Windows messages,
+and cleans up that instance, servers and temporary certificates on failure or
+success. It includes the MDI/editor regression suite. Desktop access is needed.
+There is no test-time dependency restoration, external endpoint or trust-store
+change. Manual mode prints the addresses and launches the ordinary GUI without
+application command-line arguments.
+
+For manual acceptance, use the printed HTTP address as `<base>`:
+
+1. Maximize the collection child. Send GET `<base>/inspect?literal=%2F+a`;
+   inspect status, timing, bytes, raw headers and JSON body. Send POST, PUT,
+   PATCH and DELETE to `<base>/inspect` with `Content-Type: application/json`
+   and a body containing Unicode, CR/LF, tabs, blank lines and trailing spaces.
+   The returned `body_hex` must match the exact UTF-8 input bytes. POST to
+   `<base>/echo` to compare the raw returned body directly.
+2. Send GET `<base>/status/400` and `/status/500`; status and body should remain
+   visible without a transport error. Try the printed refused address and a
+   malformed URL; these must show a distinct transport error.
+3. Send GET `<base>/delay/3000`. During Sending, edit text, switch requests,
+   create/activate another collection and try Send again. The original request
+   must execute once, retain its snapshot and update the correct request.
+   Repeat with Cancel/Esc, then close a pending child and keep using another.
+4. Send GET `<base>/binary`; confirm the safe placeholder. TLS `/ready` using
+   the printed untrusted TLS address must fail by default. Explicitly uncheck
+   Verify TLS and retry; inspect the editor and response warnings. Re-enable it.
+5. Drag both splitters, resize, and inspect response legibility. Check Ctrl+Enter,
+   Esc, Tab/Shift+Tab and F6/Shift+F6. Close the application while a request is
+   pending and confirm normal exit.
+
+The native tests also cover timeout, response/header limits, redirects and TLS
+hostname/trust validation. Arbitrary DPI changes, assistive technology and live
+public services still require separate manual verification.
 
 ## Verification recorded during implementation
 
@@ -167,6 +240,34 @@ a scoped command approval for this script to avoid repeated desktop prompts.
   validation, loopback-only tests without test-time dependency restoration,
   and a standalone MFC-free engine/test build. The public internet was used
   only for dependency setup; no live public API or SaaS was used by tests.
+
+- Slice 4 full x64 Debug and Release solution builds passed with MSVC v145 and
+  C++20, with no reported compiler warnings or errors. Both configurations
+  passed all **35 native tests** and **98 GUI checks**, with exit code 0.
+  GUI integration passed for
+  exact GET/POST/PUT/PATCH/DELETE, JSON/raw response text, ordered headers,
+  HTTP 400/500, malformed URLs/headers, refusal, TLS defaults/explicit override,
+  binary and partial responses, snapshots, concurrent request selection,
+  duplicate suppression, cancellation, pending document closure, splitters and
+  readable response controls. Cancel's Escape accelerator also passed. Both
+  response screenshots were inspected; the final splitter preserves the user's
+  chosen proportions across child resizing. All six Slice 4 acceptance checks
+  passed. PowerShell/Python syntax checks and `git diff --check` passed.
+  Test GUI instances and temporary fixture/certificate directories were cleaned
+  up. Ctrl+Enter, reverse traversal, arbitrary DPI/monitor changes, accessibility
+  and Visual Studio debugger launch have not been manually exercised.
+
+The final verification commands, run from this directory, were:
+
+```powershell
+& $msbuild .\EasyPost32.slnx /p:Configuration=Debug /p:Platform=x64 /m /nologo /verbosity:minimal
+& $msbuild .\EasyPost32.slnx /p:Configuration=Release /p:Platform=x64 /m /nologo /verbosity:minimal
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Release -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -SkipBuild -Screenshot .\build\slice4-debug.png
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\slice4-release.png
+git diff --check
+```
 
 The existing solution, project identity, icons and About dialog were retained.
 The original Win32 entry point was replaced because it supplied no MFC

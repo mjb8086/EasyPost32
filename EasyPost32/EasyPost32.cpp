@@ -11,6 +11,12 @@ END_MESSAGE_MAP()
 
 CEasyPost32App theApp;
 
+int CEasyPost32App::ExitInstance()
+{
+    httpJobs.Shutdown();
+    return CWinApp::ExitInstance();
+}
+
 BOOL CEasyPost32App::InitInstance()
 {
     INITCOMMONCONTROLSEX controls{ sizeof(controls), ICC_WIN95_CLASSES };

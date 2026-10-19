@@ -10,8 +10,8 @@ function Test-RequestEditor($Children, [IntPtr]$Main, [string]$Screenshot) {
     $body = [MdiSmokeNative]::Control($first, 1004)
     $form = [MdiSmokeNative]::GetParent($method)
     Assert-Check ($tree -ne [IntPtr]::Zero -and $method -ne [IntPtr]::Zero -and $url -ne [IntPtr]::Zero -and $headers -ne [IntPtr]::Zero -and $body -ne [IntPtr]::Zero) 'Each collection has a native tree and request editor'
-    Assert-Check (-not [MdiSmokeNative]::IsWindowEnabled($send)) 'Send is disabled'
-    Assert-Check ([MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($first, 1104)).Contains('Sending is not available')) 'Editor explains that sending is unavailable'
+    Assert-Check (-not [MdiSmokeNative]::IsWindowEnabled($send)) 'Send is disabled for an empty URL'
+    Assert-Check ([MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($first, 1104)).Contains('TLS verification enabled')) 'Editor reports the safe default TLS setting'
 
     $root = [MdiSmokeNative]::Send($tree, 0x110A, 0, 0) # TVM_GETNEXTITEM / TVGN_ROOT
     $request1 = [MdiSmokeNative]::Send($tree, 0x110A, 4, $root.ToInt64())
@@ -61,14 +61,17 @@ function Test-RequestEditor($Children, [IntPtr]$Main, [string]$Screenshot) {
     Assert-Check ([MdiSmokeNative]::ControlText($otherBody) -ceq 'another collection') 'Collection state remains independent'
 
     Assert-Check ([MdiSmokeNative]::GetNextDlgTabItem($form, $method, $false) -eq $url) 'Tab order moves from method to URL'
-    Assert-Check ([MdiSmokeNative]::GetNextDlgTabItem($form, $url, $false) -eq $headers) 'Tab order skips disabled Send and reaches headers'
+    $tls = [MdiSmokeNative]::Control($first, 1006)
+    $responseHeaders = [MdiSmokeNative]::Control($first, 1008)
+    $responseBody = [MdiSmokeNative]::Control($first, 1009)
+    Assert-Check ([MdiSmokeNative]::GetNextDlgTabItem($form, $url, $false) -eq $send -and [MdiSmokeNative]::GetNextDlgTabItem($form, $tls, $false) -eq $headers) 'Tab order includes Send and TLS before headers'
     Assert-Check ([MdiSmokeNative]::GetNextDlgTabItem($form, $headers, $false) -eq $body) 'Tab order moves from headers to raw body'
 
     [MdiSmokeNative]::MoveWindow($first, 10, 10, 1000, 680, $true) | Out-Null
     $large = [MdiSmokeNative]::Bounds($body)
     [MdiSmokeNative]::MoveWindow($first, 10, 10, 600, 430, $true) | Out-Null
     $small = [MdiSmokeNative]::Bounds($body)
-    Assert-Check (($large.Bottom - $large.Top) -gt ($small.Bottom - $small.Top) -and ($small.Bottom - $small.Top) -gt 0) 'Body editor resizes with its collection window'
+    Assert-Check (($large.Right - $large.Left) -gt ($small.Right - $small.Left) -and ($small.Bottom - $small.Top) -gt 0) 'Body editor resizes with its collection window'
     Assert-Check ([MdiSmokeNative]::ControlText($body) -ceq $expectedBody) 'Resizing does not change raw text'
 
     # Temporarily show only this test instance to exercise the application's real
@@ -77,7 +80,7 @@ function Test-RequestEditor($Children, [IntPtr]$Main, [string]$Screenshot) {
     [MdiSmokeNative]::ShowWindow($Main, 4) | Out-Null
     [MdiSmokeNative]::Send([MdiSmokeNative]::Client($Main), 0x225, $first.ToInt64(), 0) | Out-Null
     [MdiSmokeNative]::Send($form, 0x28, $method.ToInt64(), 1) | Out-Null # WM_NEXTDLGCTL sets focus in the application's thread.
-    foreach ($expected in @($url, $headers, $body, $tree, $method)) {
+    foreach ($expected in @($url, $send, $tls, $headers, $body, $responseHeaders, $responseBody, $tree, $method)) {
         $focused = [MdiSmokeNative]::Focus($Main)
         [MdiSmokeNative]::PostMessage($focused, 0x100, [IntPtr]9, [IntPtr]::Zero) | Out-Null
         $deadline = [DateTime]::UtcNow.AddSeconds(3)
@@ -88,7 +91,7 @@ function Test-RequestEditor($Children, [IntPtr]$Main, [string]$Screenshot) {
         Assert-Check ($actual -eq $expected) "Tab reaches control $([MdiSmokeNative]::GetDlgCtrlID($expected)) through the application message loop"
     }
 
-    foreach ($expected in @($tree, $method)) {
+    foreach ($expected in @($responseHeaders, $tree, $method)) {
         $focused = [MdiSmokeNative]::Focus($Main)
         [MdiSmokeNative]::PostMessage($focused, 0x100, [IntPtr]0x75, [IntPtr]::Zero) | Out-Null # F6
         $deadline = [DateTime]::UtcNow.AddSeconds(3)

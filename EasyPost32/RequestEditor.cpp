@@ -2,6 +2,7 @@
 #include "Resource.h"
 #include "CollectionWindow.h"
 #include "RequestEditor.h"
+#include "ResponseView.h"
 #include <algorithm>
 
 CString FromUtf8(const std::string& text)
@@ -41,6 +42,11 @@ BEGIN_MESSAGE_MAP(CRequestEditor, CFormView)
     ON_EN_CHANGE(IDC_REQUEST_URL, &CRequestEditor::OnDraftChanged)
     ON_EN_CHANGE(IDC_REQUEST_HEADERS, &CRequestEditor::OnDraftChanged)
     ON_EN_CHANGE(IDC_REQUEST_BODY, &CRequestEditor::OnDraftChanged)
+    ON_BN_CLICKED(IDC_VERIFY_TLS, &CRequestEditor::OnDraftChanged)
+    ON_BN_CLICKED(IDC_REQUEST_SEND, &CRequestEditor::OnSend)
+    ON_BN_CLICKED(IDC_REQUEST_CANCEL, &CRequestEditor::OnCancel)
+    ON_WM_TIMER()
+    ON_WM_DESTROY()
 END_MESSAGE_MAP()
 
 void CRequestEditor::DoDataExchange(CDataExchange* exchange)
@@ -65,19 +71,51 @@ void CRequestEditor::OnInitialUpdate()
     m_body.SetFont(&m_sourceFont);
     OnUpdate(nullptr, 0, nullptr);
     LayoutEditor();
+    // UI-thread completion dispatcher. Workers never post to a child HWND;
+    // destroying the view removes this timer and cannot leave a late callback.
+    if (!SetTimer(1, 100, nullptr))
+        AfxThrowResourceException();
 }
 
-void CRequestEditor::OnUpdate(CView*, LPARAM, CObject*)
+void CRequestEditor::OnUpdate(CView*, LPARAM hint, CObject*)
 {
     if (!m_method.GetSafeHwnd())
         return;
+    if (hint == 1) { UpdateActions(); return; }
     m_loading = true;
     const auto& request = static_cast<CCollectionDoc*>(GetDocument())->CurrentRequest();
     m_method.SelectString(-1, FromUtf8(request.method));
     m_url.SetWindowText(FromUtf8(request.url));
     m_headers.SetWindowText(FromUtf8(request.headersText));
     m_body.SetWindowText(FromUtf8(request.body));
+    CheckDlgButton(IDC_VERIFY_TLS, request.verifyTls ? BST_CHECKED : BST_UNCHECKED);
     m_loading = false;
+    UpdateActions();
+}
+
+void CRequestEditor::UpdateActions()
+{
+    auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    const auto& run = document->CurrentRun();
+    GetDlgItem(IDC_REQUEST_SEND)->EnableWindow(!run.Pending() && !document->CurrentRequest().url.empty());
+    GetDlgItem(IDC_REQUEST_CANCEL)->EnableWindow(run.Pending() && !run.cancelling);
+    GetDlgItem(IDC_VERIFY_TLS)->EnableWindow(!run.Pending());
+    SetDlgItemText(IDC_EDITOR_NOTICE, document->CurrentRequest().verifyTls ?
+        L"In memory only; closing discards edits. TLS verification enabled." :
+        L"WARNING: TLS certificate and hostname verification DISABLED. In memory only.");
+}
+
+void CRequestEditor::OnSend() { static_cast<CCollectionDoc*>(GetDocument())->Send(); }
+void CRequestEditor::OnCancel() { static_cast<CCollectionDoc*>(GetDocument())->Cancel(); }
+void CRequestEditor::OnTimer(UINT_PTR timer)
+{
+    if (timer == 1) static_cast<CCollectionDoc*>(GetDocument())->PollCompletions();
+    CFormView::OnTimer(timer);
+}
+void CRequestEditor::OnDestroy()
+{
+    KillTimer(1);
+    CFormView::OnDestroy();
 }
 
 void CRequestEditor::OnDraftChanged()
@@ -95,6 +133,8 @@ void CRequestEditor::OnDraftChanged()
     request.headersText = ToUtf8(text);
     m_body.GetWindowText(text);
     request.body = ToUtf8(text);
+    request.verifyTls = IsDlgButtonChecked(IDC_VERIFY_TLS) == BST_CHECKED;
+    UpdateActions();
     document->UpdateAllViews(this); // Refresh method labels without reloading this editor.
 }
 
@@ -124,14 +164,17 @@ void CRequestEditor::LayoutEditor()
     const int margin = scale(10), gap = scale(8), label = scale(20), row = scale(28);
     const int methodWidth = scale(90), sendWidth = scale(76);
     const int urlX = margin + methodWidth + gap;
-    const int sendX = width - margin - sendWidth;
+    const int cancelX = width - margin - sendWidth;
+    const int sendX = cancelX - gap - sendWidth;
     place(IDC_METHOD_LABEL, margin, margin, methodWidth, label);
     place(IDC_URL_LABEL, urlX, margin, sendX - gap - urlX, label);
     // Combo's window height includes its drop-down list, unlike an edit control.
     place(IDC_REQUEST_METHOD, margin, margin + label, methodWidth, scale(220));
     place(IDC_REQUEST_URL, urlX, margin + label, sendX - gap - urlX, row);
     place(IDC_REQUEST_SEND, sendX, margin + label, sendWidth, row);
-    place(IDC_EDITOR_NOTICE, margin, margin + label + row + gap, width - 2 * margin, scale(36));
+    place(IDC_REQUEST_CANCEL, cancelX, margin + label, sendWidth, row);
+    place(IDC_VERIFY_TLS, margin, scale(62), width - 2 * margin, scale(22));
+    place(IDC_EDITOR_NOTICE, margin, scale(88), width - 2 * margin, scale(36));
     const int headersY = scale(130);
     const int headersHeight = (std::max)(scale(64), (height - scale(212)) / 3);
     place(IDC_HEADERS_LABEL, margin, headersY - label, width - 2 * margin, label);
@@ -160,10 +203,9 @@ BOOL CRequestEditor::PreTranslateMessage(MSG* message)
         if ((!backwards && message->hwnd == m_body.m_hWnd) ||
             (backwards && message->hwnd == m_method.m_hWnd))
         {
-            auto* splitter = static_cast<CSplitterWnd*>(GetParent());
-            auto* tree = static_cast<CView*>(splitter->GetPane(0, 0));
-            GetParentFrame()->SetActiveView(tree);
-            tree->SetFocus();
+            auto* frame = static_cast<CCollectionFrame*>(GetParentFrame());
+            if (backwards) { frame->SetActiveView(frame->Tree()); frame->Tree()->SetFocus(); }
+            else static_cast<CResponseView*>(frame->Response())->FocusResponse(false);
             return TRUE;
         }
     }

@@ -1,7 +1,11 @@
 param(
     [string]$Executable = (Join-Path $PSScriptRoot '..\x64\Debug\EasyPost32.exe'),
     [switch]$Editor,
-    [string]$Screenshot
+    [string]$Screenshot,
+    [string]$HttpBase,
+    [string]$TlsBase,
+    [string]$RefusedBase,
+    [string]$TruncatedBase
 )
 
 # Drive the real application through native window/menu messages. No product CLI.
@@ -133,8 +137,10 @@ public static class MdiSmokeNative
 }
 '@
 
+$script:checkCount = 0
 function Assert-Check([bool]$Passed, [string]$Description) {
     if (-not $Passed) { throw $Description }
+    ++$script:checkCount
     Write-Output "PASS: $Description"
 }
 function Invoke-CommandId([int]$Command) {
@@ -168,7 +174,13 @@ try {
         Test-RequestEditor -Children $children -Main $main -Screenshot $Screenshot
     }
 
-    $menu = [MdiSmokeNative]::GetSubMenu([MdiSmokeNative]::GetMenu($main), 1)
+    $mainMenu = [MdiSmokeNative]::GetMenu($main)
+    $menu = [IntPtr]::Zero
+    for ($i = 0; $i -lt [MdiSmokeNative]::GetMenuItemCount($mainMenu); ++$i) {
+        if ([MdiSmokeNative]::MenuText($mainMenu, $i).Replace('&', '') -eq 'Window') {
+            $menu = [MdiSmokeNative]::GetSubMenu($mainMenu, $i)
+        }
+    }
     $entries = @(for ($i = 0; $i -lt [MdiSmokeNative]::GetMenuItemCount($menu); ++$i) {
         $id = [MdiSmokeNative]::GetMenuItemID($menu, $i)
         if ($id -ge 0xFF00 -and $id -lt 0xFF10) { $id }
@@ -199,8 +211,13 @@ try {
     Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 0 -and -not $app.HasExited) 'Closing all children preserves the main frame'
     Invoke-CommandId 0xE100
     Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 1) 'New works after the last child closes'
+    if ($HttpBase) {
+        . (Join-Path $PSScriptRoot 'HttpGuiChecks.ps1')
+        Test-HttpGui -Main $main -HttpBase $HttpBase -TlsBase $TlsBase -RefusedBase $RefusedBase -TruncatedBase $TruncatedBase -Screenshot $Screenshot
+    }
     Invoke-CommandId 0xE141
     Assert-Check ($app.WaitForExit(5000) -and $app.ExitCode -eq 0) 'Application exits normally with a child open'
+    Write-Output "$script:checkCount GUI checks passed"
 }
 finally {
     if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }

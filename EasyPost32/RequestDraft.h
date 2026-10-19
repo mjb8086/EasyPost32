@@ -11,4 +11,5 @@ struct RequestDraft
     std::string url;
     std::string headersText;
     std::string body;
+    bool verifyTls = true;
 };

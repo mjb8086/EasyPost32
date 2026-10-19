@@ -73,6 +73,7 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <Import Project="Http\Vcpkg.props" />
   <PropertyGroup>
     <OutDir>$(ProjectDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)build\$(Platform)\$(Configuration)\</IntDir>
@@ -155,6 +156,8 @@
     <ClInclude Include="CollectionWindow.h" />
     <ClInclude Include="RequestDraft.h" />
     <ClInclude Include="RequestEditor.h" />
+    <ClInclude Include="ResponseView.h" />
+    <ClInclude Include="RequestComposer.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
@@ -163,6 +166,7 @@
     <ClCompile Include="EasyPost32.cpp" />
     <ClCompile Include="CollectionWindow.cpp" />
     <ClCompile Include="RequestEditor.cpp" />
+    <ClCompile Include="ResponseView.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="EasyPost32.rc" />
@@ -171,7 +175,11 @@
     <Image Include="EasyPost32.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="Http\Http.vcxproj"><Project>{533c0383-c479-4401-9981-c738ac31877c}</Project></ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(VcpkgRoot)scripts\buildsystems\msbuild\vcpkg.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
