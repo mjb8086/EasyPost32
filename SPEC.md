@@ -59,7 +59,7 @@ EasyPost32 is a lightweight alternative to Postman for developers who need to ma
 - Allow editing raw URLs, repeated or arbitrary request headers, query parameters, and raw UTF-8 body text.
 - Preserve the exact user-authored body text; do **not** pretty-print or re-serialize it before sending unless the user explicitly requests formatting.
 - Show successful HTTP responses **and** 4xx/5xx responses as normal responses, not transport failures.
-- TLS certificate verification is enabled by default and must not be silently disabled.
+- TLS certificate verification is enabled by default and must not be silently disabled. Include a user option to enable/disable certificate verification.
 - Network operations must not block the MFC UI thread. Provide clear pending/completed/error states, timeouts and eventually cancellation.
 - Display binary/non-text responses safely (metadata and a placeholder, rather than dumping arbitrary bytes into a text control).
 
@@ -102,6 +102,8 @@ EasyPost32/
 
 A generated Visual Studio MFC wizard may create a different file layout. **Do not restructure working wizard code simply to match this illustrative tree.** Keep domain/network/import code independent from `CWnd`, `CString` and other MFC types where reasonably possible, using standard C++ strings and value types at the boundary. Avoid creating six layers of abstractions for a small utility.
 
+My thinking is to use a Python smoke test server powered by the FastAPI framework. Write the test server, and a sample collection to run tests against it. For that purpose, a CLI interface may be required for this application. To be discussed.
+
 ### Internal data model (target for Slices 4–5)
 
 - **Collection:** schema version, identifier, name, ordered tree of folders/requests, collection variables.
@@ -114,7 +116,7 @@ For a simple native file example (illustrative, not an irrevocable schema):
 
 ```json
 {
-  "format": "Easypost32.collection",
+  "format": "EasyPost32.collection",
   "version": 1,
   "id": "sample-collection",
   "name": "Example API",

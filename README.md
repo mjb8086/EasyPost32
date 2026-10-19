@@ -1,7 +1,7 @@
 EasyPost32
 ==========
 
-The HTTP Client that you'll forget.
+The HTTP Client that's made to be forgotten.
 
 - No Sign In
 - Collections
