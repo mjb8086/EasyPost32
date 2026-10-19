@@ -84,3 +84,14 @@ The requested slice **builds (where the correct toolchain is available), works, 
 ## First implementation request
 
 When starting from a fresh repository, work on **Slice 1 only**. The user may need to create and commit an MFC MDI App Wizard skeleton first. Inspect it, confirm x64 Debug builds, set the application name, and verify multiple independent MDI child windows. Then stop and report results.
+
+## Autonomous Development
+
+- Execute builds, tests, and diagnostic commands yourself.
+- Do not ask the user to run MSBuild or other commands
+  that you are capable of executing.
+- Resolve compilation errors autonomously.
+- Iterate until the current slice passes its acceptance tests.
+- Use installed development tools and package managers.
+- Report missing prerequisites that require administrator access.
+- Never begin the next implementation slice automatically.
