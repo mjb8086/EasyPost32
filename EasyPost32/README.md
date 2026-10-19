@@ -1,4 +1,4 @@
-# EasyPost32 — Slice 2 request editor
+# EasyPost32 — Slice 3 HTTP engine and local tests
 
 This project uses C++20, MFC document/view and classic MDI child windows.
 Each collection has a separate `CCollectionDoc` and `CCollectionFrame`, with a
@@ -14,8 +14,12 @@ the Windows UI boundary. Repeated headers and unfinished header lines remain
 editable source text; raw bodies are never parsed or reformatted.
 
 **All edits are in memory only. Closing a collection discards its edits.**
-Send and Open are disabled. Networking, collection files, variables, history
-and import/export have not been implemented.
+Send and Open are disabled. The standalone libcurl engine is implemented and
+tested independently of MFC; GUI transmission begins in Slice 4. Collection
+files, variables, history and import/export have not been implemented.
+
+See [Http/README.md](Http/README.md) for HTTP behavior, dependency setup, the
+single-command integration tests and their loopback-only TLS fixtures.
 
 ## Prerequisites
 
@@ -24,6 +28,8 @@ and import/export have not been implemented.
   a Windows SDK, and **C++ MFC for x64/x86 (Latest MSVC)**.
 - The project uses MFC in a shared DLL. Debug builds require the matching
   development runtime supplied by Visual Studio.
+- HTTP engine/tests: Visual Studio's bundled vcpkg (or `VCPKG_ROOT`) and Python
+  3.13, with dependencies restored once via `tests\SetupHttp.ps1`.
 
 If MSBuild reports `MSB8041`, close Visual Studio and its related processes,
 open Visual Studio Installer, choose Modify for the installation, and select
@@ -40,6 +46,17 @@ msbuild .\EasyPost32.vcxproj /p:Configuration=Debug /p:Platform=x64 /m /nologo
 msbuild .\EasyPost32.vcxproj /p:Configuration=Release /p:Platform=x64 /m /nologo
 & .\x64\Debug\EasyPost32.exe
 ```
+
+To build the whole solution, first restore the HTTP dependencies:
+
+```powershell
+powershell.exe -NoProfile -File .\tests\SetupHttp.ps1
+msbuild .\EasyPost32.slnx /p:Configuration=Debug /p:Platform=x64 /m /nologo
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug
+```
+
+Normal HTTP test runs use only loopback sockets and work offline after setup.
+They build the standalone engine/test target without launching the GUI.
 
 Outside a Developer PowerShell, locate MSBuild from the installed Visual Studio:
 
@@ -71,7 +88,7 @@ original Win32 project is not verification of the MFC scaffold.
 5. Resize the application and inspect the menu, toolbar, status bar and child
    text. Check keyboard menu access, and repeat at the intended display scale.
 6. Launch while disconnected from the network. Confirm no sign-in, online
-   setup or network dependency. This slice contains no HTTP implementation.
+   setup or network dependency. The GUI performs no startup requests or HTTP execution.
 7. Exit normally, including with multiple empty children still open.
 
 ## Native MDI smoke check
@@ -137,7 +154,19 @@ a scoped command approval for this script to avoid repeated desktop prompts.
   child. Arbitrary DPI/monitor changes, screen-reader behavior, reverse keyboard
   traversal and Visual Studio debugger launch have not been manually verified.
 - Independent collection editing was also manually confirmed by the developer.
-- Transport tests and the FastAPI fixture begin in Slice 3.
+- Slice 3 adds the independent transport and the FastAPI/Uvicorn fixture,
+  retaining the existing in-memory editor and disabled Send control.
+- Slice 3 native Debug and Release integration suites passed all 29 tests in
+  each configuration. The full x64 solution built successfully in both modes,
+  and the Debug editor/MDI regression suite passed all 46 checks. The native
+  projects compile at warning level 4 without reported warnings. Fixture
+  processes and temporary certificate directories were cleaned up after both
+  successful and failed test runs. `git diff --check` passed.
+- All six Slice 3 acceptance checks passed: exact GET/POST transmission,
+  ordinary HTTP error responses, useful refusal/timeout errors, default TLS
+  validation, loopback-only tests without test-time dependency restoration,
+  and a standalone MFC-free engine/test build. The public internet was used
+  only for dependency setup; no live public API or SaaS was used by tests.
 
 The existing solution, project identity, icons and About dialog were retained.
 The original Win32 entry point was replaced because it supplied no MFC

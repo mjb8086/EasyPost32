@@ -6,3 +6,6 @@ Debug/
 Release/
 *.aps
 *.user
+vcpkg_installed/
+__pycache__/
+*.pyc

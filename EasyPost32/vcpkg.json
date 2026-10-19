@@ -1,0 +1,9 @@
+{
+  "name": "easypost32",
+  "version-string": "0.1.0",
+  "builtin-baseline": "664933b8d385dfc01f4e0cdff4c7c74e71f6a740",
+  "dependencies": [
+    { "name": "curl", "default-features": false, "features": ["ssl"] },
+    "nlohmann-json"
+  ]
+}
