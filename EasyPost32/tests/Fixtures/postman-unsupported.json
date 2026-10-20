@@ -1,0 +1,10 @@
+{
+  "info": {"name": "Synthetic unsupported features", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "event": [{"listen": "prerequest", "script": {"type": "text/javascript", "exec": ["throw new Error('NEVER_EXECUTE_SYNTHETIC_SCRIPT');"]}}],
+  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "SYNTHETIC_AUTH_VALUE"}]},
+  "variable": [{"key": "baseUrl", "value": "http://127.0.0.1:8080"}],
+  "item": [
+    {"name": "Multipart", "request": {"method": "POST", "url": "{{baseUrl}}/inspect", "body": {"mode": "formdata", "formdata": [{"key": "file", "type": "file", "src": "NEVER_READ_SYNTHETIC_FILE"}]}}, "response": [{"name": "Saved example", "body": "SYNTHETIC_SAVED_RESPONSE"}]},
+    {"name": "Custom method skipped", "request": {"method": "PROPFIND", "url": "{{baseUrl}}/inspect"}}
+  ]
+}

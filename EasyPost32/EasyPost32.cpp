@@ -4,12 +4,16 @@
 #include "CollectionWindow.h"
 #include "CollectionDialogs.h"
 #include "RequestEditor.h"
+#include "Core/Interop.h"
 #include <afxdlgs.h>
 
 BEGIN_MESSAGE_MAP(CEasyPost32App, CWinApp)
     ON_COMMAND(ID_FILE_NEW, &CWinApp::OnFileNew)
     ON_COMMAND(ID_FILE_OPEN, &CWinApp::OnFileOpen)
     ON_COMMAND(ID_LOCAL_HISTORY, &CEasyPost32App::OnHistory)
+    ON_COMMAND_RANGE(ID_IMPORT_POSTMAN, ID_IMPORT_OPENAPI, &CEasyPost32App::OnImport)
+    ON_COMMAND(ID_EXPORT_POSTMAN, &CEasyPost32App::OnExportPostman)
+    ON_UPDATE_COMMAND_UI(ID_EXPORT_POSTMAN, &CEasyPost32App::OnUpdateExport)
     ON_COMMAND(ID_APP_ABOUT, &CEasyPost32App::OnAppAbout)
 END_MESSAGE_MAP()
 
@@ -91,4 +95,49 @@ void CEasyPost32App::OnAppAbout()
 {
     CDialog about(IDD_ABOUTBOX);
     about.DoModal();
+}
+
+void CEasyPost32App::OnImport(UINT command)
+{
+    CFileDialog file(TRUE, L"json", nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT,
+        L"JSON files (*.json)|*.json|All files (*.*)|*.*||", m_pMainWnd, 0, FALSE);
+    file.m_ofn.lpstrTitle = command == ID_IMPORT_POSTMAN ? L"Import Postman v2.1 JSON" : L"Import OpenAPI 3.0/3.1 JSON";
+    if (file.DoModal() != IDOK) return;
+    try
+    {
+        const auto source = easypost::ReadTextFile(file.GetPathName().GetString());
+        auto candidate = command == ID_IMPORT_POSTMAN ? easypost::ImportPostman(source) : easypost::ImportOpenApi(source);
+        CCompatibilityDialog report(L"Import compatibility report", candidate.compatibilityNotes);
+        if (report.DoModal() != IDOK) return;
+        auto position = GetFirstDocTemplatePosition();
+        auto* docTemplate = GetNextDocTemplate(position);
+        auto* document = static_cast<CCollectionDoc*>(docTemplate->OpenDocumentFile(nullptr));
+        if (document) document->AdoptImport(std::move(candidate));
+    }
+    catch (const std::exception& error) { AfxMessageBox(FromUtf8(error.what())); }
+}
+void CEasyPost32App::OnUpdateExport(CCmdUI* command)
+{
+    auto* frame = static_cast<CMDIFrameWnd*>(m_pMainWnd);
+    command->Enable(frame && frame->MDIGetActive() != nullptr);
+}
+void CEasyPost32App::OnExportPostman()
+{
+    auto* child = static_cast<CMDIFrameWnd*>(m_pMainWnd)->MDIGetActive();
+    if (!child) return;
+    auto* document = static_cast<CCollectionDoc*>(child->GetActiveDocument());
+    if (!document) return;
+    try
+    {
+        const auto output = easypost::ExportPostman(document->Collection());
+        // Review all inherited/source loss notes BEFORE choosing or writing a destination.
+        CCompatibilityDialog report(L"Export compatibility report", output.notes);
+        if (report.DoModal() != IDOK) return;
+        CFileDialog file(FALSE, L"json", L"collection.postman_collection.json",
+            OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT,
+            L"Postman v2.1 JSON (*.json)|*.json||", m_pMainWnd, 0, FALSE);
+        file.m_ofn.lpstrTitle = L"Export Postman v2.1 JSON";
+        if (file.DoModal() == IDOK) easypost::WriteTextAtomic(file.GetPathName().GetString(), output.text);
+    }
+    catch (const std::exception& error) { AfxMessageBox(FromUtf8(error.what())); }
 }

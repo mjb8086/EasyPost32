@@ -2,6 +2,7 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
     [switch]$SkipBuild,
     [switch]$Manual,
+    [switch]$InteropOnly,
     [string]$Screenshot
 )
 $ErrorActionPreference = 'Stop'
@@ -18,5 +19,9 @@ if (-not (Test-Path -LiteralPath $python)) { throw 'Run tests\SetupHttp.ps1 firs
 $mode = if ($Manual) { '--manual' } else { '--gui' }
 $arguments = @((Join-Path $PSScriptRoot 'run_http_tests.py'), $mode, '--executable', (Join-Path $root "x64\$Configuration\EasyPost32.exe"))
 if ($Screenshot) { $arguments += @('--screenshot', $Screenshot) }
+if ($InteropOnly) {
+    if ($Manual) { throw 'InteropOnly and Manual are mutually exclusive.' }
+    $arguments += '--interop-only'
+}
 & $python @arguments
 exit $LASTEXITCODE

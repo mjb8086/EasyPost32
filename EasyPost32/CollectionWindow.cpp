@@ -132,6 +132,15 @@ void CCollectionDoc::Changed(CView* sender, LPARAM hint)
     SetModifiedFlag(TRUE);
     UpdateAllViews(sender, hint);
 }
+void CCollectionDoc::AdoptImport(easypost::Collection collection)
+{
+    for (auto& [id, run] : m_runs) if (run.job) run.job->Cancel();
+    m_runs.clear();
+    m_collection = std::move(collection);
+    m_selectedId = easypost::FirstRequestId(m_collection.items);
+    SetTitle(FromUtf8(m_collection.name));
+    Changed(nullptr, 2); // Replace the initial blank tree and its old item IDs.
+}
 BOOL CCollectionDoc::OnOpenDocument(LPCTSTR path)
 {
     try

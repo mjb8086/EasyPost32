@@ -16,6 +16,17 @@ async def ready():
     return PlainTextResponse("ready")
 
 
+@app.get("/import-ref")
+async def import_ref():
+    app.state.import_ref_count = getattr(app.state, "import_ref_count", 0) + 1
+    return JSONResponse({"name": "external", "in": "query", "example": "never fetched"})
+
+
+@app.get("/import-ref-count")
+async def import_ref_count():
+    return PlainTextResponse(str(getattr(app.state, "import_ref_count", 0)))
+
+
 @app.get("/fixture-ca.crl")
 async def certificate_revocations():
     return Response(app.state.crl_bytes, media_type="application/pkix-crl")

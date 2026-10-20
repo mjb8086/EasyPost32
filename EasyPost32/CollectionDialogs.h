@@ -1,6 +1,16 @@
 #pragma once
 #include "Core/Collection.h"
 
+class CCompatibilityDialog : public CDialog
+{
+public:
+    CCompatibilityDialog(const CString& caption, const std::vector<std::string>& notes);
+protected:
+    BOOL OnInitDialog() override;
+private:
+    CString m_caption, m_text;
+};
+
 class CNameDialog : public CDialog
 {
 public:

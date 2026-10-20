@@ -1,0 +1,17 @@
+{
+  "openapi": "3.1.1",
+  "info": {"title": "Synthetic OAS 3.1 API", "version": "1.0"},
+  "servers": [{"url": "http://127.0.0.1:8080/root"}, {"url": "http://127.0.0.1:8081/alternate"}],
+  "paths": {
+    "/inspect": {
+      "servers": [{"url": "http://127.0.0.1:8080/path"}],
+      "put": {"summary": "Update", "servers": [{"url": "http://127.0.0.1:8080"}], "requestBody": {"$ref": "#/components/requestBodies/Body"}, "responses": {"200": {"description": "OK"}}},
+      "patch": {"summary": "Patch without example", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"value": {"type": "string"}}}}}}, "responses": {"200": {"description": "OK"}}},
+      "options": {"responses": {"200": {"description": "OK"}}}
+    }
+  },
+  "components": {
+    "requestBodies": {"Body": {"content": {"application/json": {"examples": {"first": {"$ref": "#/components/examples/Message"}}}}}},
+    "examples": {"Message": {"value": {"hello": "world", "enabled": true}}}
+  }
+}

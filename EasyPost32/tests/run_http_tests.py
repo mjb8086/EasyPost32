@@ -13,6 +13,7 @@ import time
 
 from LocalHttpServer.fixture import run_server
 from LocalHttpServer.certificates import generate
+from validate_postman import validate_exports
 
 
 class TruncatedResponse(socketserver.BaseRequestHandler):
@@ -54,7 +55,10 @@ def main():
     mode.add_argument("--gui", action="store_true", help="Drive the MFC GUI using the same private fixtures")
     mode.add_argument("--manual", action="store_true", help="Keep fixtures alive until the manually tested GUI exits")
     parser.add_argument("--screenshot", type=Path)
+    parser.add_argument("--interop-only", action="store_true", help="Run just GUI interoperability checks")
     args = parser.parse_args()
+    if args.interop_only and not args.gui:
+        parser.error("--interop-only requires --gui")
     executable = args.executable.resolve(strict=True)
     build = root / "build"
     build.mkdir(exist_ok=True)
@@ -106,14 +110,22 @@ def main():
                                    "-TlsBase", https, "-RefusedBase", command[5], "-TruncatedBase", command[6]]
                         if args.screenshot:
                             command.extend(["-Screenshot", str(args.screenshot.resolve())])
+                        if args.interop_only:
+                            command.append("-InteropOnly")
                     elif args.manual:
                         print(f"HTTP fixture: {http}\nUntrusted TLS fixture: {https}\nRefused connection: {command[5]}", flush=True)
                         print("Try /inspect, /echo, /status/400, /status/500, /delay/3000 and /binary. Close this test GUI to stop the fixtures.", flush=True)
                         command = [str(executable)]
                     # No dependency restoration, certificate-store changes, or public endpoints.
                     if args.gui:
-                        return run_gui_checks(command, directory)
-                    return subprocess.run(command, timeout=None if args.manual else 90, check=False).returncode
+                        result = run_gui_checks(command, directory)
+                    else:
+                        environment = os.environ.copy()
+                        environment["EASYPOST_INTEROP_OUTPUT"] = str(directory)
+                        result = subprocess.run(command, env=environment, timeout=None if args.manual else 90, check=False).returncode
+                    if result == 0 and not args.manual:
+                        validate_exports(directory)
+                    return result
                 finally:
                     truncated.shutdown()
                     thread.join(timeout=3)

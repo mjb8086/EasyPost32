@@ -16,6 +16,7 @@ public:
     BOOL OnOpenDocument(LPCTSTR path) override;
     BOOL OnSaveDocument(LPCTSTR path) override;
     BOOL DoSave(LPCTSTR path, BOOL replace = TRUE) override;
+    void AdoptImport(easypost::Collection collection);
 
     easypost::Collection& Collection() { return m_collection; }
     bool HasRequest();

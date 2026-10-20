@@ -1,0 +1,24 @@
+{
+  "info": {
+    "name": "Synthetic loopback API",
+    "description": "Offline interoperability fixture, no real credentials.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{"key": "baseUrl", "value": "http://127.0.0.1:8080", "type": "string"}],
+  "item": [
+    {"name": "Outer", "description": "Nested folder", "item": [
+      {"name": "Inner", "item": [
+        {"name": "Exact JSON echo", "request": {
+          "method": "POST", "url": "{{baseUrl}}/inspect?one=1&one=2",
+          "description": "Raw source must survive byte for byte.",
+          "header": [{"key": "X-Repeat", "value": "one"}, {"key": "X-Repeat", "value": "two"}, {"key": "Content-Type", "value": "application/json"}],
+          "body": {"mode": "raw", "raw": "{\r\n\t\"message\" : \"caf\u00e9\"\r\n}\r\n  "}
+        }}
+      ]}
+    ]},
+    {"name": "Structured URL", "request": {"method": "GET", "url": {
+      "protocol": "http", "host": ["127", "0", "0", "1"], "port": "8080", "path": ["inspect"],
+      "query": [{"key": "message", "value": "a b&c"}, {"key": "repeat", "value": "1"}, {"key": "repeat", "value": "2"}, {"key": "ignored", "value": "value", "disabled": true}]
+    }}}
+  ]
+}

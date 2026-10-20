@@ -1,8 +1,19 @@
 # Native collection format, version 1
 
 Files use the `.dp32.json` suffix and UTF-8 JSON. The top-level object contains
-exactly `format`, `version`, `id`, `name`, `variables` and `items`.
+required fields `format`, `version`, `id`, `name`, `variables` and `items`.
 `format` is `EasyPost32.collection`; `version` is the integer `1`.
+
+Slice 6 adds optional `description` (text) to collections and folder/request
+items, plus optional collection `compatibilityNotes` (at most 100 text entries,
+each 1–1024 UTF-8 bytes). Empty optional fields are omitted. Generated notes
+describe omitted features without storing imported script source, auth helper
+values or saved responses. They survive native save/reopen so subsequent
+Postman exports still show the original limitations. Descriptions are retained
+as plain text metadata, without rendering markup or a description editor.
+Files without these additions remain valid; older Slice 5 binaries reject
+the new fields rather than silently losing them. The version remains 1 because
+the additions are optional and preserve all existing field semantics.
 
 ```json
 {

@@ -19,6 +19,7 @@
   <ItemGroup>
     <ClInclude Include="Collection.h" /><ClCompile Include="Collection.cpp" />
     <ClInclude Include="Storage.h" /><ClCompile Include="Storage.cpp" />
+    <ClInclude Include="Interop.h" /><ClCompile Include="Interop.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(VcpkgRoot)scripts\buildsystems\msbuild\vcpkg.targets" />

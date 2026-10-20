@@ -1,6 +1,7 @@
 param(
     [string]$Executable = (Join-Path $PSScriptRoot '..\x64\Debug\EasyPost32.exe'),
     [switch]$Editor,
+    [switch]$InteropOnly,
     [string]$Screenshot,
     [string]$HttpBase,
     [string]$TlsBase,
@@ -214,6 +215,14 @@ try {
     Assert-Check ($main -ne [IntPtr]::Zero -and $client -ne [IntPtr]::Zero) 'Native MDI frame launches'
     Assert-Check ([MdiSmokeNative]::Text($main).Contains('EasyPost32')) 'Application title is EasyPost32'
     Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 1) 'One collection opens at startup'
+    if ($InteropOnly) {
+        . (Join-Path $PSScriptRoot 'InteropChecks.ps1')
+        Test-Interop -Main $main -HttpBase $HttpBase -WorkDirectory $env:EASYPOST_TEST_DIRECTORY -Screenshot $Screenshot
+        Invoke-CommandId 0xE141
+        Assert-Check ($app.WaitForExit(5000) -and $app.ExitCode -eq 0) 'Application exits normally after interoperability checks'
+        Write-Output "$script:checkCount GUI checks passed"
+        return
+    }
     Invoke-CommandId 0xE100
     Invoke-CommandId 0xE100
     $children = @([MdiSmokeNative]::Children($client))
@@ -268,6 +277,8 @@ try {
         Test-HttpGui -Main $main -HttpBase $HttpBase -TlsBase $TlsBase -RefusedBase $RefusedBase -TruncatedBase $TruncatedBase -Screenshot $Screenshot
         . (Join-Path $PSScriptRoot 'CollectionChecks.ps1')
         Test-Collections -Main $main -HttpBase $HttpBase -WorkDirectory $env:EASYPOST_TEST_DIRECTORY -Screenshot $Screenshot
+        . (Join-Path $PSScriptRoot 'InteropChecks.ps1')
+        Test-Interop -Main $main -HttpBase $HttpBase -WorkDirectory $env:EASYPOST_TEST_DIRECTORY -Screenshot $Screenshot
     }
     Invoke-CommandId 0xE141
     Assert-Check ($app.WaitForExit(5000) -and $app.ExitCode -eq 0) 'Application exits normally with a child open'

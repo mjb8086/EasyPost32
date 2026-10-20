@@ -44,8 +44,9 @@ std::string Text(const json& value, bool nonempty = false)
 CollectionItem ReadItem(const json& value, size_t depth, size_t& count, std::set<std::string>& ids)
 {
     Check(depth <= 32 && ++count <= 10000, "Collection exceeds the folder depth or item limit.");
-    Keys(value, { "id", "type", "name", "items", "request" });
+    Keys(value, { "id", "type", "name", "items", "request", "description" });
     CollectionItem item;
+    if (value.contains("description")) item.description = Text(value.at("description"));
     item.id = Text(value.at("id"), true);
     Check(item.id.size() <= 128 && ids.insert(item.id).second, "Invalid or duplicate item identifier.");
     const auto name = Text(value.at("name"), true);
@@ -80,6 +81,7 @@ json WriteItem(const CollectionItem& item, size_t depth, size_t& count)
     Check(depth <= 32 && ++count <= 10000, "Collection exceeds the folder depth or item limit.");
     Check(!item.request || item.items.empty(), "Requests cannot contain child items.");
     json value{ {"id", item.id}, {"name", item.Name()}, {"type", item.request ? "request" : "folder"} };
+    if (!item.description.empty()) value["description"] = item.description;
     if (item.request)
     {
         const auto& draft = *item.request;
@@ -212,13 +214,25 @@ Collection DecodeCollection(const std::string& jsonText)
             if (event == json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        Keys(root, { "format", "version", "id", "name", "variables", "items" });
+        Keys(root, { "format", "version", "id", "name", "variables", "items", "description", "compatibilityNotes" });
         Check(root.at("format") == "EasyPost32.collection", "Not an EasyPost32 collection.");
         Check(root.at("version").is_number_integer() && root.at("version") == 1, "Unsupported collection version.");
         Collection collection;
         collection.id = Text(root.at("id"), true);
         Check(collection.id.size() <= 128, "Collection identifier is too long.");
         collection.name = Text(root.at("name"), true);
+        if (root.contains("description")) collection.description = Text(root.at("description"));
+        if (root.contains("compatibilityNotes"))
+        {
+            const auto& notes = root.at("compatibilityNotes");
+            Check(notes.is_array() && notes.size() <= 100, "Invalid compatibility notes.");
+            for (const auto& note : notes)
+            {
+                auto text = Text(note, true);
+                Check(text.size() <= 1024, "Compatibility note is too long.");
+                collection.compatibilityNotes.push_back(std::move(text));
+            }
+        }
         Check(root.at("variables").is_array() && root.at("items").is_array(), "Expected item and variable arrays.");
         for (const auto& field : root.at("variables"))
         {
@@ -244,6 +258,8 @@ std::string EncodeCollection(const Collection& collection)
     ValidateVariables(collection.variables);
     json root{ {"format", "EasyPost32.collection"}, {"version", 1}, {"id", collection.id}, {"name", collection.name},
         {"variables", json::array()}, {"items", json::array()} };
+    if (!collection.description.empty()) root["description"] = collection.description;
+    if (!collection.compatibilityNotes.empty()) root["compatibilityNotes"] = collection.compatibilityNotes;
     for (const auto& variable : collection.variables)
     {
         json value{ {"name", variable.name}, {"secret", variable.secret} };

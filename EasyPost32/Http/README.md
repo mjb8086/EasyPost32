@@ -189,3 +189,10 @@ environment overrides `LOCALAPPDATA` inside the private fixture directory.
   without reported compiler warnings/errors, and both complete GUI suites
   passed **124 checks**, including native file dialogs and close prompts.
   The format and privacy contract is in `docs/CollectionFormat.md`.
+- Slice 6 adds 21 native interoperability checks, for **74 native tests** passing
+  in x64 Debug and Release. The full GUI suite passes **152 checks** in both
+  configurations, including real imported Postman/OpenAPI Sends and native
+  import/export reports/dialogs. Five production export samples per configuration
+  validate offline against the checked-in official Postman v2.1 schema. Python's
+  pinned jsonschema dependency is development-only. See the main README and
+  `docs/Interoperability.md` for commands and precise format limitations.

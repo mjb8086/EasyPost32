@@ -17,6 +17,7 @@ struct CollectionItem
     std::string folderName;
     std::optional<RequestDraft> request;
     std::vector<CollectionItem> items;
+    std::string description;
     const std::string& Name() const { return request ? request->name : folderName; }
     bool operator==(const CollectionItem&) const = default;
 };
@@ -25,6 +26,9 @@ struct Collection
     std::string id, name;
     std::vector<CollectionItem> items;
     std::vector<Variable> variables;
+    std::string description;
+    // Generic compatibility warnings only; never retain scripts or source credentials.
+    std::vector<std::string> compatibilityNotes;
     bool operator==(const Collection&) const = default;
 };
 std::string NewId();

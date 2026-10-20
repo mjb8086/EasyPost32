@@ -43,6 +43,11 @@ BEGIN
     BEGIN
         MENUITEM "&New Collection\tCtrl+N", ID_FILE_NEW
         MENUITEM "&Open...", ID_FILE_OPEN
+        POPUP "&Import"
+        BEGIN
+            MENUITEM "Postman v2.1 JSON...", ID_IMPORT_POSTMAN
+            MENUITEM "OpenAPI 3.0/3.1 JSON...", ID_IMPORT_OPENAPI
+        END
         MENUITEM "Local &History...", ID_LOCAL_HISTORY
         MENUITEM SEPARATOR
         MENUITEM "E&xit", ID_APP_EXIT
@@ -68,6 +73,12 @@ BEGIN
         MENUITEM "&Open...", ID_FILE_OPEN
         MENUITEM "&Save\tCtrl+S", ID_FILE_SAVE
         MENUITEM "Save &As...\tCtrl+Shift+S", ID_FILE_SAVE_AS
+        POPUP "&Import"
+        BEGIN
+            MENUITEM "Postman v2.1 JSON...", ID_IMPORT_POSTMAN
+            MENUITEM "OpenAPI 3.0/3.1 JSON...", ID_IMPORT_OPENAPI
+        END
+        MENUITEM "&Export Postman v2.1 JSON...", ID_EXPORT_POSTMAN
         MENUITEM "Local &History...", ID_LOCAL_HISTORY
         MENUITEM "&Close Collection\tCtrl+F4", ID_FILE_CLOSE
         MENUITEM SEPARATOR
@@ -126,6 +137,16 @@ END
 //
 // Dialog
 //
+
+IDD_COMPATIBILITY DIALOGEX 0, 0, 470, 300
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Compatibility report"
+FONT 9, "Segoe UI"
+BEGIN
+    EDITTEXT IDC_COMPATIBILITY_TEXT, 8, 8, 454, 260, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON "Continue", IDOK, 346, 276, 55, 16
+    PUSHBUTTON "Cancel", IDCANCEL, 407, 276, 55, 16
+END
 
 IDD_REQUEST_EDITOR DIALOGEX 0, 0, 400, 300
 STYLE DS_SETFONT | DS_CONTROL | WS_CHILD

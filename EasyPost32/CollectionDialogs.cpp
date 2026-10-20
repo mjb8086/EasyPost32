@@ -4,6 +4,24 @@
 #include "RequestEditor.h"
 #include "EasyPost32.h"
 
+CCompatibilityDialog::CCompatibilityDialog(const CString& caption, const std::vector<std::string>& notes)
+    : CDialog(IDD_COMPATIBILITY), m_caption(caption)
+{
+    m_text = L"Review the supported mapping before continuing.\r\n\r\n";
+    for (const auto& note : notes) m_text += L"- " + FromUtf8(note) + L"\r\n\r\n";
+    m_text += L"Ordinary variables, explicit headers, URLs and body text may contain plaintext credentials. "
+        L"Review them before saving or sharing. Marked secret variable values are never written.\r\n\r\n"
+        L"Continue applies this mapping; Cancel leaves your documents and destination file unchanged.";
+}
+BOOL CCompatibilityDialog::OnInitDialog()
+{
+    CDialog::OnInitDialog();
+    SetWindowText(m_caption);
+    static_cast<CEdit*>(GetDlgItem(IDC_COMPATIBILITY_TEXT))->SetLimitText(0);
+    SetDlgItemText(IDC_COMPATIBILITY_TEXT, m_text);
+    return TRUE;
+}
+
 CNameDialog::CNameDialog(CString initial) : CDialog(IDD_ITEM_NAME), name(std::move(initial)) {}
 BOOL CNameDialog::OnInitDialog()
 {

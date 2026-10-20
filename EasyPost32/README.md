@@ -1,4 +1,4 @@
-# EasyPost32 — Slice 5 collections, variables and history
+# EasyPost32 — Slice 6 JSON interoperability
 
 This project uses C++20, MFC document/view and classic MDI child windows.
 Each collection has a separate `CCollectionDoc` and `CCollectionFrame`, with a
@@ -64,8 +64,19 @@ endpoint. Recording must be enabled both at Send and at completion.
 Closing a pending collection cancels its work without retaining its response in
 history. See [the native format and privacy contract](docs/CollectionFormat.md).
 
-Import/export is reserved for Slice 6. The application has no product CLI,
-server, sign-in, telemetry or startup network request.
+**File > Import** opens Postman Collection v2.1 JSON and OpenAPI 3.0/3.1 JSON as
+independent, unsaved collections. **File > Export Postman v2.1 JSON** exports
+the active collection. Both show a scrollable compatibility report with
+Continue/Cancel; unsupported-feature notes survive native save/reopen and are
+shown before later export. Postman raw bodies and supported fields round-trip;
+OpenAPI imports operations, applicable servers, scalar parameters and explicit
+JSON examples, including common local references. Scripts are never executed;
+external references/example values are never fetched. Marked secret variables
+are omitted from Postman export. Review [the exact supported mapping and
+limitations](docs/Interoperability.md), especially omitted auth helpers/body modes,
+blank OpenAPI parameters/bodies, URL encoding and plaintext ordinary fields.
+The application has no product CLI, server, sign-in, telemetry or startup network
+request.
 
 See [Http/README.md](Http/README.md) for HTTP behavior, dependency setup, the
 single-command integration tests and their loopback-only TLS fixtures.
@@ -349,6 +360,54 @@ powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -Sk
 powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\slice5-release.png
 git diff --check
 ```
+
+Slice 6 final verification (2026-10-20):
+
+- Full x64 Debug and Release solution builds passed with MSVC v145/C++20 and
+  no reported compiler warnings/errors. Each configuration passed **74 native
+  tests** (21 new interoperability tests) and **152 full GUI checks** (28 new
+  interoperability checks), all with exit code 0.
+- Four native production exports plus one actual GUI export per configuration
+  passed the checked-in official Postman v2.1 Draft 4 schema using a validator
+  registry that rejects external retrieval. Fixtures and all test traffic use
+  synthetic local data. The external-reference fixture counter stayed unchanged
+  during import; no imported script, external reference or upload file was run
+  or fetched.
+- All six Slice 6 acceptance checks passed: Postman field import; schema-valid
+  supported-field round trips; warnings before lossy export; OAS 3.0/3.1 request
+  selection and real Send; local references with external references reported;
+  and safe rejection of bad input without damaging existing documents. Imports
+  use fresh unsaved documents, and loss notes survive native save/reopen.
+- Debug/Release screenshots were inspected: imported operation tree, readable
+  JSON example, TLS default, response headers/body and HTTP status were visible.
+  The GUI suite uses real native dialogs, including Cancel, Save As, malformed
+  import and export flows. No product CLI or test hook was introduced.
+- The large invalid-input case exposed quadratic array scans in JSON DOM filter
+  callbacks. Streaming duplicate-key/depth/NUL validation followed by ordered
+  parsing removes that scan; the original 90-second test deadline is retained.
+  MSBuild tracking and the final Release GUI launch needed execution outside
+  the sandbox; those retries passed without changing Windows policy settings.
+- PowerShell/Python syntax checks and `git diff --check` passed. Private fixture
+  directories and test GUI processes were cleaned up. Arbitrary DPI/monitor
+  changes, screen readers and a live Postman application round trip were not
+  exercised. The supported subset and deliberate limitations are documented in
+  [docs/Interoperability.md](docs/Interoperability.md).
+
+The final commands, from this directory with `$msbuild` set as above, were:
+
+```powershell
+& $msbuild .\EasyPost32.slnx /p:Configuration=Debug /p:Platform=x64 /m /nologo /verbosity:minimal
+& $msbuild .\EasyPost32.slnx /p:Configuration=Release /p:Platform=x64 /m /nologo /verbosity:minimal
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Release -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -SkipBuild -Screenshot .\build\slice6-debug.png
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\slice6-release.png
+git diff --check
+```
+
+For a focused GUI interoperability run, add `-InteropOnly` to `TestGuiHttp.ps1`;
+it passes 32 checks (including launch/exit) and validates its actual export.
+The complete GUI command above always includes all earlier slice regressions.
 
 The existing solution, project identity, icons and About dialog were retained.
 The original Win32 entry point was replaced because it supplied no MFC

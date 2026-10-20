@@ -1,0 +1,21 @@
+{
+  "openapi": "3.0.4",
+  "info": {"title": "Synthetic OAS 3.0 API", "version": "1.0", "description": "Local reference and parameter fixtures."},
+  "servers": [{"url": "http://127.0.0.1:{port}", "variables": {"port": {"default": "8080"}}}],
+  "paths": {
+    "/inspect/{id}": {
+      "parameters": [{"$ref": "#/components/parameters/Id"}, {"name": "q", "in": "query", "schema": {"type": "string", "default": "path-default"}}],
+      "get": {"summary": "Get inspected item", "parameters": [{"name": "q", "in": "query", "example": "a b&c"}, {"$ref": "#/components/parameters/Header"}], "responses": {"200": {"description": "OK"}}},
+      "delete": {"operationId": "deleteItem", "responses": {"204": {"description": "Deleted"}}}
+    },
+    "/inspect": {"post": {"operationId": "createItem", "requestBody": {"$ref": "#/components/requestBodies/Create"}, "responses": {"200": {"description": "OK"}}}}
+  },
+  "components": {
+    "parameters": {
+      "Id": {"name": "id", "in": "path", "required": true, "schema": {"$ref": "#/components/schemas/Id"}},
+      "Header": {"name": "X-Example", "in": "header", "example": "fixture"}
+    },
+    "requestBodies": {"Create": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Message"}}}}},
+    "schemas": {"Id": {"type": "string", "example": "item/1"}, "Message": {"type": "object", "example": {"message": "caf\u00e9", "count": 2}}}
+  }
+}

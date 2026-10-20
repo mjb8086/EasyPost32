@@ -2,6 +2,7 @@
 #include "../../Http/HttpJobs.h"
 #include "../../RequestComposer.h"
 #include "CollectionTests.h"
+#include "InteropTests.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <future>
@@ -61,7 +62,7 @@ int main(int argc, char** argv)
     int passed = 0, failed = 0;
     auto test = [&](const std::string& name, auto action)
     {
-        try { action(); ++passed; std::cout << "PASS: " << name << '\n'; }
+        try { action(); ++passed; std::cout << "PASS: " << name << std::endl; }
         catch (const std::exception& error) { ++failed; std::cerr << "FAIL: " << name << ": " << error.what() << '\n'; }
     };
 
@@ -408,6 +409,7 @@ int main(int argc, char** argv)
         Require(observer.expired(), "Shutdown retained the worker job");
     });
     RunCollectionTests(base, test);
+    RunInteropTests(base, test);
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;
 }
