@@ -17,8 +17,6 @@ CString FromUtf8(const std::string& text)
     return result;
 }
 
-namespace
-{
 std::string ToUtf8(const CString& text)
 {
     if (text.IsEmpty())
@@ -29,7 +27,6 @@ std::string ToUtf8(const CString& text)
     WideCharToMultiByte(CP_UTF8, 0, text.GetString(), text.GetLength(),
         result.data(), count, nullptr, nullptr);
     return result;
-}
 }
 
 IMPLEMENT_DYNCREATE(CRequestEditor, CFormView)
@@ -96,13 +93,16 @@ void CRequestEditor::OnUpdate(CView*, LPARAM hint, CObject*)
 void CRequestEditor::UpdateActions()
 {
     auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    const bool hasRequest = document->HasRequest();
+    for (int id : { IDC_REQUEST_METHOD, IDC_REQUEST_URL, IDC_REQUEST_HEADERS, IDC_REQUEST_BODY })
+        GetDlgItem(id)->EnableWindow(hasRequest);
     const auto& run = document->CurrentRun();
     GetDlgItem(IDC_REQUEST_SEND)->EnableWindow(!run.Pending() && !document->CurrentRequest().url.empty());
     GetDlgItem(IDC_REQUEST_CANCEL)->EnableWindow(run.Pending() && !run.cancelling);
-    GetDlgItem(IDC_VERIFY_TLS)->EnableWindow(!run.Pending());
-    SetDlgItemText(IDC_EDITOR_NOTICE, document->CurrentRequest().verifyTls ?
-        L"In memory only; closing discards edits. TLS verification enabled." :
-        L"WARNING: TLS certificate and hostname verification DISABLED. In memory only.");
+    GetDlgItem(IDC_VERIFY_TLS)->EnableWindow(hasRequest && !run.Pending());
+    SetDlgItemText(IDC_EDITOR_NOTICE, !hasRequest ? L"Select a request in the collection tree." : document->CurrentRequest().verifyTls ?
+        L"TLS verification enabled. Saved headers, bodies and ordinary variables are plaintext." :
+        L"WARNING: TLS certificate and hostname verification DISABLED. Saved request text is plaintext.");
 }
 
 void CRequestEditor::OnSend() { static_cast<CCollectionDoc*>(GetDocument())->Send(); }
@@ -123,7 +123,9 @@ void CRequestEditor::OnDraftChanged()
     if (m_loading || !m_method.GetSafeHwnd() || m_method.GetCurSel() == CB_ERR)
         return;
     auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    if (!document->HasRequest()) return;
     auto& request = document->CurrentRequest();
+    const auto previous = request;
     CString text;
     m_method.GetLBText(m_method.GetCurSel(), text);
     request.method = ToUtf8(text);
@@ -135,7 +137,8 @@ void CRequestEditor::OnDraftChanged()
     request.body = ToUtf8(text);
     request.verifyTls = IsDlgButtonChecked(IDC_VERIFY_TLS) == BST_CHECKED;
     UpdateActions();
-    document->UpdateAllViews(this); // Refresh method labels without reloading this editor.
+    if (request == previous) return;
+    document->Changed(this); // Refresh method labels without reloading this editor.
 }
 
 void CRequestEditor::OnSize(UINT type, int width, int height)

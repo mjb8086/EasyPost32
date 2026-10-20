@@ -12,6 +12,29 @@
 #define ID_REQUEST_CANCEL         32772
 #define ID_COLLECTION_NEXT_PANE   32773
 #define ID_COLLECTION_PREV_PANE   32774
+#define ID_ITEM_NEW_REQUEST       32775
+#define ID_ITEM_NEW_FOLDER        32776
+#define ID_ITEM_RENAME            32777
+#define ID_ITEM_DUPLICATE         32778
+#define ID_ITEM_DELETE            32779
+#define ID_ITEM_MOVE_UP           32780
+#define ID_ITEM_MOVE_DOWN         32781
+#define ID_COLLECTION_VARIABLES   32782
+#define ID_LOCAL_HISTORY          32783
+#define IDD_ITEM_NAME             132
+#define IDD_VARIABLES             133
+#define IDD_HISTORY               134
+#define IDC_ITEM_NAME             1200
+#define IDC_VARIABLE_LIST         1201
+#define IDC_VARIABLE_NAME         1202
+#define IDC_VARIABLE_VALUE        1203
+#define IDC_VARIABLE_SECRET       1204
+#define IDC_VARIABLE_APPLY        1205
+#define IDC_VARIABLE_DELETE       1206
+#define IDC_VARIABLE_NEW          1207
+#define IDC_HISTORY_TEXT          1208
+#define IDC_HISTORY_RECORD        1209
+#define IDC_HISTORY_CLEAR         1210
 #define IDC_REQUEST_METHOD        1000
 #define IDC_REQUEST_URL           1001
 #define IDC_REQUEST_SEND          1002
@@ -45,9 +68,9 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 
-#define _APS_NEXT_RESOURCE_VALUE	132
-#define _APS_NEXT_COMMAND_VALUE		32775
-#define _APS_NEXT_CONTROL_VALUE		1107
+#define _APS_NEXT_RESOURCE_VALUE	135
+#define _APS_NEXT_COMMAND_VALUE		32784
+#define _APS_NEXT_CONTROL_VALUE		1211
 #define _APS_NEXT_SYMED_VALUE		110
 #endif
 #endif

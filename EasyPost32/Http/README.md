@@ -147,13 +147,21 @@ explicit validation disablement, independent concurrent requests, editor body
 composition, safe header diagnostics, pre-cancellation, worker snapshots,
 in-flight cancellation and safe release of document-owned job references.
 
-There is no public endpoint dependency, account, product CLI, sample collection
-file or test-time package restoration. The saved `.dp32.json` fixture collection
-belongs to Slice 5. `tests/TestGuiHttp.ps1` now reuses these fixtures for real
+There is no public endpoint dependency, account, product CLI or test-time
+package restoration. Slice 5 supplies `tests/Fixtures/loopback.dp32.json` as a
+synthetic native sample, with an editable `baseUrl` for each ephemeral fixture.
+`tests/TestGuiHttp.ps1` reuses these fixtures for real
 GUI checks; `-Manual` prints addresses and keeps the fixtures alive until the
 ordinary GUI instance exits. See the main README for exact manual requests.
 Fixture/test binaries
 and Python are development tools, not application startup dependencies.
+
+`Core/Core.vcxproj` now builds the separate, MFC-free collection/variable/history
+library. The standalone native test executable links both libraries and tests
+collection round trips, atomic failures, secret omission, variable expansion
+through the real HTTP engine, URL sanitization and bounded/clearable history.
+GUI tests additionally drive Save/Open and unsaved-change dialogs. Their child
+environment overrides `LOCALAPPDATA` inside the private fixture directory.
 
 ## Verification
 
@@ -176,3 +184,8 @@ and Python are development tools, not application startup dependencies.
   closure. See the main README for verification commands and manual limitations.
 - Public-service interoperability, other TLS backends, arbitrary proxy setups
   and non-Windows builds were not tested.
+- Slice 5 adds 18 native collection/variable/history checks, for **53 native
+  tests** passing in both Debug and Release. Both full solution builds passed
+  without reported compiler warnings/errors, and both complete GUI suites
+  passed **124 checks**, including native file dialogs and close prompts.
+  The format and privacy contract is in `docs/CollectionFormat.md`.

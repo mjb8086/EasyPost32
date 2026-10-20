@@ -1,6 +1,7 @@
 #include "../../Http/HttpClient.h"
 #include "../../Http/HttpJobs.h"
 #include "../../RequestComposer.h"
+#include "CollectionTests.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <future>
@@ -406,6 +407,7 @@ int main(int argc, char** argv)
         jobs.Shutdown();
         Require(observer.expired(), "Shutdown retained the worker job");
     });
+    RunCollectionTests(base, test);
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;
 }

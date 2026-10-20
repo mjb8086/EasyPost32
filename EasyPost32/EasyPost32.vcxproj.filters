@@ -28,6 +28,7 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ResponseView.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CollectionDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RequestComposer.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
@@ -50,6 +51,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ResponseView.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CollectionDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="EasyPost32.rc">

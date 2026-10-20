@@ -5,5 +5,6 @@
   </Configurations>
   <Project Path="EasyPost32.vcxproj" Id="c68e4202-0063-4f25-ae2b-a5654f38e299" />
   <Project Path="Http/Http.vcxproj" Id="533c0383-c479-4401-9981-c738ac31877c" />
+  <Project Path="Core/Core.vcxproj" Id="674634ee-ac8a-4580-bc0c-6171d919f705" />
   <Project Path="tests/HttpTests/HttpTests.vcxproj" Id="d67bdada-f63e-48b4-a40d-bce20f82bc5a" />
 </Solution>

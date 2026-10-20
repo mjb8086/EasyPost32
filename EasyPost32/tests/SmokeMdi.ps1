@@ -31,6 +31,7 @@ public static class MdiSmokeNative
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetNextDlgTabItem(IntPtr dialog, IntPtr control, bool previous);
@@ -110,6 +111,42 @@ public static class MdiSmokeNative
         }, IntPtr.Zero);
         return found;
     }
+    public static IntPtr Dialog(int process) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((window, data) => {
+            uint owner; GetWindowThreadProcessId(window, out owner);
+            var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
+            if (owner == process && name.ToString() == "#32770" && IsWindowVisible(window)) { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+    public static IntPtr FirstClass(IntPtr parent, string className) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, (window, data) => {
+            var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
+            if (name.ToString() == className) { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+    public static string ControlClasses(IntPtr parent) {
+        var found = new List<string>();
+        EnumChildWindows(parent, (window, data) => {
+            var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
+            found.Add(name.ToString() + ":" + GetDlgCtrlID(window)); return true;
+        }, IntPtr.Zero);
+        return string.Join(", ", found);
+    }
+    public static string StaticText(IntPtr parent) {
+        var found = new List<string>();
+        EnumChildWindows(parent, (window, data) => {
+            var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
+            if (name.ToString() == "Static") found.Add(ControlText(window));
+            return true;
+        }, IntPtr.Zero);
+        return string.Join(" | ", found);
+    }
     public static IntPtr Client(IntPtr main) { return FindWindowEx(main, IntPtr.Zero, "MDIClient", null); }
     public static IntPtr[] Children(IntPtr client) {
         var children = new List<IntPtr>(); IntPtr child = IntPtr.Zero;
@@ -144,6 +181,21 @@ function Assert-Check([bool]$Passed, [string]$Description) {
     Write-Output "PASS: $Description"
 }
 function Invoke-CommandId([int]$Command) {
+    if ($Command -in @(0xE102, 0xE141)) {
+        $oldChild = [MdiSmokeNative]::Send([MdiSmokeNative]::Client($script:main), 0x229, 0, 0)
+        [MdiSmokeNative]::PostMessage($script:main, 0x111, [IntPtr]$Command, [IntPtr]::Zero) | Out-Null
+        $deadline = [DateTime]::UtcNow.AddSeconds(5)
+        do {
+            if ($app.HasExited -or ($Command -eq 0xE102 -and -not [MdiSmokeNative]::IsWindow($oldChild))) { return }
+            $dialog = [MdiSmokeNative]::Dialog($app.Id)
+            if ($dialog -ne [IntPtr]::Zero -and [MdiSmokeNative]::Control($dialog, 7) -ne [IntPtr]::Zero) {
+                # Discard only synthetic edits in this private test instance.
+                [MdiSmokeNative]::PostMessage($dialog, 0x111, [IntPtr]7, [IntPtr]::Zero) | Out-Null
+            }
+            Start-Sleep -Milliseconds 20
+        } while ([DateTime]::UtcNow -lt $deadline)
+        throw 'Synthetic test collection did not close'
+    }
     [MdiSmokeNative]::Send($script:main, 0x111, $Command, 0) | Out-Null
 }
 
@@ -214,6 +266,8 @@ try {
     if ($HttpBase) {
         . (Join-Path $PSScriptRoot 'HttpGuiChecks.ps1')
         Test-HttpGui -Main $main -HttpBase $HttpBase -TlsBase $TlsBase -RefusedBase $RefusedBase -TruncatedBase $TruncatedBase -Screenshot $Screenshot
+        . (Join-Path $PSScriptRoot 'CollectionChecks.ps1')
+        Test-Collections -Main $main -HttpBase $HttpBase -WorkDirectory $env:EASYPOST_TEST_DIRECTORY -Screenshot $Screenshot
     }
     Invoke-CommandId 0xE141
     Assert-Check ($app.WaitForExit(5000) -and $app.ExitCode -eq 0) 'Application exits normally with a child open'

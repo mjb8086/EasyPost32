@@ -1,6 +1,7 @@
 """Start private loopback fixtures, run the native tests, then clean up."""
 import argparse
 import multiprocessing
+import os
 from pathlib import Path
 import socket
 import socketserver
@@ -28,8 +29,11 @@ def loopback_socket():
     return listener
 
 
-def run_gui_checks(command):
-    process = subprocess.Popen(command)
+def run_gui_checks(command, directory):
+    environment = os.environ.copy()
+    environment["LOCALAPPDATA"] = str(directory / "local-app-data")
+    environment["EASYPOST_TEST_DIRECTORY"] = str(directory)
+    process = subprocess.Popen(command, env=environment)
     try:
         return process.wait(timeout=90)
     finally:
@@ -108,7 +112,7 @@ def main():
                         command = [str(executable)]
                     # No dependency restoration, certificate-store changes, or public endpoints.
                     if args.gui:
-                        return run_gui_checks(command)
+                        return run_gui_checks(command, directory)
                     return subprocess.run(command, timeout=None if args.manual else 90, check=False).returncode
                 finally:
                     truncated.shutdown()

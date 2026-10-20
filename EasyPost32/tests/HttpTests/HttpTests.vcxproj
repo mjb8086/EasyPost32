@@ -23,9 +23,10 @@
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="HttpTests.cpp" /></ItemGroup>
+  <ItemGroup><ClCompile Include="HttpTests.cpp" /><ClCompile Include="CollectionTests.cpp" /><ClInclude Include="CollectionTests.h" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Http\Http.vcxproj"><Project>{533c0383-c479-4401-9981-c738ac31877c}</Project></ProjectReference>
+    <ProjectReference Include="..\..\Core\Core.vcxproj"><Project>{674634ee-ac8a-4580-bc0c-6171d919f705}</Project></ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(VcpkgRoot)scripts\buildsystems\msbuild\vcpkg.targets" />

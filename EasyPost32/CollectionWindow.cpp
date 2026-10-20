@@ -5,6 +5,9 @@
 #include "ResponseView.h"
 #include "RequestComposer.h"
 #include "EasyPost32.h"
+#include "CollectionDialogs.h"
+#include <algorithm>
+#include <afxdlgs.h>
 
 IMPLEMENT_DYNCREATE(CCollectionDoc, CDocument)
 IMPLEMENT_DYNCREATE(CCollectionView, CTreeView)
@@ -12,7 +15,7 @@ IMPLEMENT_DYNCREATE(CCollectionFrame, CMDIChildWnd)
 
 CCollectionDoc::~CCollectionDoc()
 {
-    for (auto& run : m_runs)
+    for (auto& [id, run] : m_runs)
         if (run.job) run.job->Cancel();
 }
 
@@ -21,19 +24,23 @@ BOOL CCollectionDoc::OnNewDocument()
     if (!CDocument::OnNewDocument())
         return FALSE;
 
-    m_requests = { RequestDraft{ "Request 1" }, RequestDraft{ "Request 2" } };
-    m_selectedRequest = 0;
-    m_runs.resize(m_requests.size());
+    m_collection = easypost::NewCollection(ToUtf8(GetTitle()));
+    m_selectedId = easypost::FirstRequestId(m_collection.items);
+    SetModifiedFlag(FALSE);
     return TRUE;
 }
 
 void CCollectionDoc::Send()
 {
-    auto& run = m_runs.at(m_selectedRequest);
+    if (!HasRequest()) return;
+    auto& run = m_runs[m_selectedId];
     if (run.Pending() || CurrentRequest().url.empty()) return;
     easypost::HttpRequest request;
     std::string error;
-    if (!ComposeRequest(CurrentRequest(), request, error))
+    RequestDraft resolved;
+    try { resolved = easypost::ResolveDraft(CurrentRequest(), m_collection.variables); }
+    catch (const std::exception& failure) { error = failure.what(); }
+    if (!error.empty() || !ComposeRequest(resolved, request, error))
     {
         run = {};
         run.preparationError = std::move(error);
@@ -47,6 +54,10 @@ void CCollectionDoc::Send()
             auto job = theApp.httpJobs.Start(std::move(request), options);
             run = {};
             run.job = std::move(job);
+            run.recordHistory = theApp.history.enabled;
+            if (run.recordHistory)
+                run.history = { easypost::UtcTimestamp(), resolved.method,
+                    easypost::HistoryUrl(resolved.url, m_collection.variables) };
         }
         catch (...)
         {
@@ -59,7 +70,7 @@ void CCollectionDoc::Send()
 
 void CCollectionDoc::Cancel()
 {
-    auto& run = m_runs.at(m_selectedRequest);
+    auto& run = m_runs[m_selectedId];
     if (run.Pending())
     {
         run.cancelling = true;
@@ -71,38 +82,151 @@ void CCollectionDoc::Cancel()
 void CCollectionDoc::PollCompletions()
 {
     bool changed = false;
-    for (auto& run : m_runs)
+    for (auto& [id, run] : m_runs)
         if (run.Pending() && run.job->Done())
         {
             run.completionDispatched = true;
             changed = true;
+            if (run.recordHistory && theApp.history.enabled)
+            {
+                const auto& response = run.job->Response();
+                run.history.status = response.status;
+                run.history.elapsedMs = response.elapsed.count();
+                run.history.transportError = response.error.has_value();
+                try { theApp.history.Record(run.history); }
+                catch (const std::exception&)
+                {
+                    theApp.history.enabled = false;
+                    AfxMessageBox(L"Unable to save local history. Recording has been disabled; your response is still available.");
+                }
+            }
         }
     theApp.httpJobs.Reap();
     if (changed) UpdateAllViews(nullptr, 1);
 }
 
-void CCollectionDoc::SelectRequest(size_t index)
+bool CCollectionDoc::HasRequest()
 {
-    if (index >= m_requests.size() || index == m_selectedRequest)
-        return;
-    m_selectedRequest = index;
+    const auto* item = easypost::FindItem(m_collection.items, m_selectedId);
+    return item && item->request.has_value();
+}
+RequestDraft& CCollectionDoc::CurrentRequest()
+{
+    auto* item = easypost::FindItem(m_collection.items, m_selectedId);
+    return item && item->request ? *item->request : m_noRequest;
+}
+const CCollectionDoc::RequestRun& CCollectionDoc::CurrentRun() const
+{
+    static const RequestRun empty;
+    const auto found = m_runs.find(m_selectedId);
+    return found == m_runs.end() ? empty : found->second;
+}
+void CCollectionDoc::SelectItem(const std::string& id)
+{
+    if (id == m_selectedId) return;
+    m_selectedId = id;
     UpdateAllViews(nullptr);
 }
-
-BOOL CCollectionDoc::OnOpenDocument(LPCTSTR)
+void CCollectionDoc::Changed(CView* sender, LPARAM hint)
 {
-    AfxMessageBox(L"Opening collection files will be available in Slice 5.");
-    return FALSE;
+    SetModifiedFlag(TRUE);
+    UpdateAllViews(sender, hint);
 }
-
-BOOL CCollectionDoc::OnSaveDocument(LPCTSTR)
+BOOL CCollectionDoc::OnOpenDocument(LPCTSTR path)
 {
-    AfxMessageBox(L"Saving collection files will be available in Slice 5.");
-    return FALSE;
+    try
+    {
+        auto candidate = easypost::LoadCollection(path);
+        for (auto& [id, run] : m_runs) if (run.job) run.job->Cancel();
+        m_collection = std::move(candidate);
+        m_selectedId = easypost::FirstRequestId(m_collection.items);
+        m_runs.clear();
+        SetModifiedFlag(FALSE);
+        return TRUE;
+    }
+    catch (const std::exception& error) { AfxMessageBox(FromUtf8(error.what())); return FALSE; }
+}
+BOOL CCollectionDoc::OnSaveDocument(LPCTSTR path)
+{
+    try { easypost::SaveCollection(path, m_collection); SetModifiedFlag(FALSE); return TRUE; }
+    catch (const std::exception& error) { AfxMessageBox(FromUtf8(error.what())); return FALSE; }
+}
+BOOL CCollectionDoc::DoSave(LPCTSTR path, BOOL replace)
+{
+    // CDocument::DoSave deletes the destination after a failed Save As. Our
+    // atomic writer already owns cleanup; retain the original on every failure.
+    CString destination(path);
+    if (destination.IsEmpty())
+    {
+        destination = GetPathName();
+        if (destination.IsEmpty()) destination = GetTitle() + L".dp32.json";
+        if (!AfxGetApp()->DoPromptFileName(destination, replace ? AFX_IDS_SAVEFILE : AFX_IDS_SAVEFILECOPY,
+                OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT, FALSE, GetDocTemplate())) return FALSE;
+    }
+    CWaitCursor wait;
+    if (!OnSaveDocument(destination)) return FALSE;
+    if (replace) SetPathName(destination, FALSE);
+    return TRUE;
+}
+void CCollectionDoc::EditItem(UINT command)
+{
+    auto* selected = easypost::FindItem(m_collection.items, m_selectedId);
+    if (command == ID_ITEM_RENAME)
+    {
+        CNameDialog dialog(FromUtf8(selected ? selected->Name() : m_collection.name));
+        if (dialog.DoModal() != IDOK) return;
+        const auto name = ToUtf8(dialog.name);
+        if (!selected) m_collection.name = name;
+        else if (selected->request) selected->request->name = name;
+        else selected->folderName = name;
+    }
+    else if (command == ID_ITEM_NEW_REQUEST || command == ID_ITEM_NEW_FOLDER)
+    {
+        CNameDialog dialog(command == ID_ITEM_NEW_FOLDER ? L"New folder" : L"New request");
+        if (dialog.DoModal() != IDOK) return;
+        auto* destination = selected && !selected->request ? &selected->items :
+            selected ? easypost::ItemSiblings(m_collection.items, selected->id) : &m_collection.items;
+        easypost::CollectionItem item;
+        item.id = easypost::NewId();
+        if (command == ID_ITEM_NEW_REQUEST) item.request = RequestDraft{ ToUtf8(dialog.name) };
+        else item.folderName = ToUtf8(dialog.name);
+        m_selectedId = item.id;
+        destination->push_back(std::move(item));
+    }
+    else if (selected)
+    {
+        auto* siblings = easypost::ItemSiblings(m_collection.items, selected->id);
+        auto position = std::find_if(siblings->begin(), siblings->end(), [selected](const auto& item) { return &item == selected; });
+        if (command == ID_ITEM_DUPLICATE)
+        {
+            auto copy = *selected;
+            easypost::RenewIds(copy);
+            if (copy.request) copy.request->name += " copy"; else copy.folderName += " copy";
+            m_selectedId = copy.id;
+            siblings->insert(position + 1, std::move(copy));
+        }
+        else if (command == ID_ITEM_DELETE)
+        {
+            if (AfxMessageBox(L"Delete the selected item and its contents?", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+            // Cancel jobs below a removed subtree before invalidating its IDs.
+            std::erase_if(m_runs, [selected](auto& entry)
+            {
+                if (entry.first != selected->id && !easypost::FindItem(selected->items, entry.first)) return false;
+                if (entry.second.job) entry.second.job->Cancel();
+                return true;
+            });
+            siblings->erase(position);
+            m_selectedId = easypost::FirstRequestId(m_collection.items);
+        }
+        else if (command == ID_ITEM_MOVE_UP && position != siblings->begin()) std::iter_swap(position, position - 1);
+        else if (command == ID_ITEM_MOVE_DOWN && position + 1 != siblings->end()) std::iter_swap(position, position + 1);
+        else return;
+    }
+    else return;
+    Changed(nullptr, 2);
 }
 
 BEGIN_MESSAGE_MAP(CCollectionView, CTreeView)
-    ON_NOTIFY_REFLECT(TVN_SELCHANGING, &CCollectionView::OnSelectionChanging)
     ON_NOTIFY_REFLECT(TVN_SELCHANGED, &CCollectionView::OnSelectionChanged)
 END_MESSAGE_MAP()
 
@@ -112,44 +236,59 @@ void CCollectionView::OnInitialUpdate()
     auto& tree = GetTreeCtrl();
     tree.ModifyStyle(0, TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT |
         TVS_SHOWSELALWAYS | WS_TABSTOP);
-    m_root = tree.InsertItem(GetDocument()->GetTitle());
-    const auto& requests = static_cast<CCollectionDoc*>(GetDocument())->Requests();
-    for (size_t index = 0; index < requests.size(); ++index)
-    {
-        HTREEITEM item = tree.InsertItem(L"", m_root);
-        tree.SetItemData(item, static_cast<DWORD_PTR>(index));
-    }
     OnUpdate(nullptr, 0, nullptr);
-    tree.Expand(m_root, TVE_EXPAND);
-    tree.SelectItem(tree.GetChildItem(m_root));
 }
 
-void CCollectionView::OnUpdate(CView*, LPARAM, CObject*)
+void CCollectionView::InsertItems(const std::vector<easypost::CollectionItem>& items, HTREEITEM parent)
 {
-    if (m_root == nullptr)
-        return;
     auto& tree = GetTreeCtrl();
-    auto* document = static_cast<CCollectionDoc*>(GetDocument());
-    for (HTREEITEM item = tree.GetChildItem(m_root); item; item = tree.GetNextSiblingItem(item))
+    for (const auto& item : items)
     {
-        const auto& request = document->Requests().at(tree.GetItemData(item));
-        tree.SetItemText(item, FromUtf8(request.method + "  " + request.name));
+        const auto handle = tree.InsertItem(FromUtf8(item.request ? item.request->method + "  " + item.Name() : item.Name()), parent);
+        m_ids[handle] = item.id;
+        InsertItems(item.items, handle);
+        if (!item.request) tree.Expand(handle, TVE_EXPAND);
     }
 }
-
-void CCollectionView::OnSelectionChanging(NMHDR* header, LRESULT* result)
+void CCollectionView::OnUpdate(CView*, LPARAM hint, CObject*)
 {
-    auto* change = reinterpret_cast<NMTREEVIEW*>(header);
-    *result = change->itemNew.hItem == m_root; // The root is a collection label.
+    if (!GetSafeHwnd()) return;
+    auto* document = static_cast<CCollectionDoc*>(GetDocument());
+    auto& tree = GetTreeCtrl();
+    if (!m_root || hint == 2)
+    {
+        m_rebuilding = true;
+        tree.DeleteAllItems();
+        m_ids.clear();
+        m_root = tree.InsertItem(FromUtf8(document->Collection().name));
+        m_ids[m_root] = "";
+        InsertItems(document->Collection().items, m_root);
+        tree.Expand(m_root, TVE_EXPAND);
+        for (const auto& [handle, id] : m_ids)
+            if (id == document->SelectedId()) { tree.SelectItem(handle); break; }
+        m_rebuilding = false;
+    }
+    else if (hint != 1)
+    {
+        // Draft edits can only change the selected label. Avoid searching the
+        // whole model for every tree node on each keystroke in large collections.
+        const auto* item = easypost::FindItem(document->Collection().items, document->SelectedId());
+        if (item)
+            for (const auto& [handle, id] : m_ids)
+                if (id == item->id)
+                {
+                    tree.SetItemText(handle, FromUtf8(item->request ? item->request->method + "  " + item->Name() : item->Name()));
+                    break;
+                }
+    }
 }
 
 void CCollectionView::OnSelectionChanged(NMHDR* header, LRESULT* result)
 {
     *result = 0;
     auto* change = reinterpret_cast<NMTREEVIEW*>(header);
-    if (change->itemNew.hItem != m_root)
-        static_cast<CCollectionDoc*>(GetDocument())->SelectRequest(
-            static_cast<size_t>(GetTreeCtrl().GetItemData(change->itemNew.hItem)));
+    if (!m_rebuilding && m_ids.contains(change->itemNew.hItem))
+        static_cast<CCollectionDoc*>(GetDocument())->SelectItem(m_ids.at(change->itemNew.hItem));
 }
 
 BOOL CCollectionView::PreTranslateMessage(MSG* message)
@@ -205,7 +344,30 @@ BEGIN_MESSAGE_MAP(CCollectionFrame, CMDIChildWnd)
     ON_UPDATE_COMMAND_UI(ID_REQUEST_CANCEL, &CCollectionFrame::OnUpdateCancel)
     ON_COMMAND(ID_COLLECTION_NEXT_PANE, &CCollectionFrame::OnNextPane)
     ON_COMMAND(ID_COLLECTION_PREV_PANE, &CCollectionFrame::OnPreviousPane)
+    ON_COMMAND_RANGE(ID_ITEM_NEW_REQUEST, ID_ITEM_MOVE_DOWN, &CCollectionFrame::OnItemCommand)
+    ON_UPDATE_COMMAND_UI_RANGE(ID_ITEM_NEW_REQUEST, ID_ITEM_MOVE_DOWN, &CCollectionFrame::OnUpdateItemCommand)
+    ON_COMMAND(ID_COLLECTION_VARIABLES, &CCollectionFrame::OnVariables)
 END_MESSAGE_MAP()
+
+void CCollectionFrame::OnItemCommand(UINT command)
+{
+    static_cast<CCollectionDoc*>(GetActiveDocument())->EditItem(command);
+}
+void CCollectionFrame::OnUpdateItemCommand(CCmdUI* command)
+{
+    auto* document = static_cast<CCollectionDoc*>(GetActiveDocument());
+    command->Enable(document && (command->m_nID <= ID_ITEM_RENAME || !document->SelectedId().empty()));
+}
+void CCollectionFrame::OnVariables()
+{
+    auto* document = static_cast<CCollectionDoc*>(GetActiveDocument());
+    CVariablesDialog dialog(document->Collection().variables);
+    if (dialog.DoModal() == IDOK && document->Collection().variables != dialog.variables)
+    {
+        document->Collection().variables = std::move(dialog.variables);
+        document->Changed();
+    }
+}
 
 void CCollectionFrame::OnSend() { static_cast<CCollectionDoc*>(GetActiveDocument())->Send(); }
 void CCollectionFrame::OnCancel() { static_cast<CCollectionDoc*>(GetActiveDocument())->Cancel(); }

@@ -4,6 +4,7 @@
 
 // Explicit UTF-8 conversions are confined to the Windows UI boundary.
 CString FromUtf8(const std::string& text);
+std::string ToUtf8(const CString& text);
 
 class CRequestEditor : public CFormView
 {

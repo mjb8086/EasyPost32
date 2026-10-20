@@ -43,6 +43,7 @@ BEGIN
     BEGIN
         MENUITEM "&New Collection\tCtrl+N", ID_FILE_NEW
         MENUITEM "&Open...", ID_FILE_OPEN
+        MENUITEM "Local &History...", ID_LOCAL_HISTORY
         MENUITEM SEPARATOR
         MENUITEM "E&xit", ID_APP_EXIT
     END
@@ -65,6 +66,9 @@ BEGIN
     BEGIN
         MENUITEM "&New Collection\tCtrl+N", ID_FILE_NEW
         MENUITEM "&Open...", ID_FILE_OPEN
+        MENUITEM "&Save\tCtrl+S", ID_FILE_SAVE
+        MENUITEM "Save &As...\tCtrl+Shift+S", ID_FILE_SAVE_AS
+        MENUITEM "Local &History...", ID_LOCAL_HISTORY
         MENUITEM "&Close Collection\tCtrl+F4", ID_FILE_CLOSE
         MENUITEM SEPARATOR
         MENUITEM "E&xit", ID_APP_EXIT
@@ -73,6 +77,16 @@ BEGIN
     BEGIN
         MENUITEM "&Send\tCtrl+Enter", ID_REQUEST_SEND
         MENUITEM "&Cancel\tEsc", ID_REQUEST_CANCEL
+        MENUITEM SEPARATOR
+        MENUITEM "&New Request...", ID_ITEM_NEW_REQUEST
+        MENUITEM "New &Folder...", ID_ITEM_NEW_FOLDER
+        MENUITEM "&Rename Selected...\tF2", ID_ITEM_RENAME
+        MENUITEM "&Duplicate Selected", ID_ITEM_DUPLICATE
+        MENUITEM "&Delete Selected...", ID_ITEM_DELETE
+        MENUITEM "Move &Up", ID_ITEM_MOVE_UP
+        MENUITEM "Move Do&wn", ID_ITEM_MOVE_DOWN
+        MENUITEM SEPARATOR
+        MENUITEM "Collection &Variables...", ID_COLLECTION_VARIABLES
     END
     POPUP "&Window"
     BEGIN
@@ -89,12 +103,17 @@ END
 
 IDR_MAINFRAME ACCELERATORS
 BEGIN
+    "O", ID_FILE_OPEN, VIRTKEY, CONTROL
     "N", ID_FILE_NEW, VIRTKEY, CONTROL
     VK_F4, ID_FILE_CLOSE, VIRTKEY, CONTROL
 END
 
 IDR_COLLECTION ACCELERATORS
 BEGIN
+    "O", ID_FILE_OPEN, VIRTKEY, CONTROL
+    "S", ID_FILE_SAVE, VIRTKEY, CONTROL
+    "S", ID_FILE_SAVE_AS, VIRTKEY, CONTROL, SHIFT
+    VK_F2, ID_ITEM_RENAME, VIRTKEY
     VK_RETURN, ID_REQUEST_SEND, VIRTKEY, CONTROL
     VK_ESCAPE, ID_REQUEST_CANCEL, VIRTKEY
     "N", ID_FILE_NEW, VIRTKEY, CONTROL
@@ -137,6 +156,49 @@ BEGIN
     LTEXT "Response &body (raw, read only)", IDC_RESPONSE_BODY_LABEL, 134, 54, 256, 12
     EDITTEXT IDC_RESPONSE_HEADERS, 8, 68, 118, 74, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_HSCROLL | WS_VSCROLL | WS_TABSTOP
     EDITTEXT IDC_RESPONSE_BODY, 134, 68, 256, 74, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_HSCROLL | WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_ITEM_NAME DIALOGEX 0, 0, 270, 64
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Item name"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "&Name", IDC_STATIC, 8, 8, 38, 12
+    EDITTEXT IDC_ITEM_NAME, 48, 6, 214, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON "OK", IDOK, 150, 38, 52, 16
+    PUSHBUTTON "Cancel", IDCANCEL, 210, 38, 52, 16
+END
+
+IDD_VARIABLES DIALOGEX 0, 0, 480, 255
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Collection variables"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "Collection variables (case sensitive). Use {{name}} in URLs, headers and bodies.", IDC_STATIC, 8, 6, 464, 14
+    LISTBOX IDC_VARIABLE_LIST, 8, 24, 210, 165, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    LTEXT "&Name", IDC_STATIC, 230, 24, 242, 12
+    EDITTEXT IDC_VARIABLE_NAME, 230, 38, 242, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT "&Value", IDC_STATIC, 230, 60, 242, 12
+    EDITTEXT IDC_VARIABLE_VALUE, 230, 74, 242, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    CONTROL "&Secret: value kept in memory, never saved", IDC_VARIABLE_SECRET, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 230, 128, 242, 16
+    PUSHBUTTON "&Add / Update", IDC_VARIABLE_APPLY, 230, 150, 100, 18
+    PUSHBUTTON "&New", IDC_VARIABLE_NEW, 338, 150, 62, 18
+    PUSHBUTTON "&Delete", IDC_VARIABLE_DELETE, 408, 150, 64, 18
+    LTEXT "Saved headers, bodies and ordinary variables are plaintext. Marked secret values must be re-entered after opening a collection. No recursive substitution or automatic URL encoding.", IDC_STATIC, 8, 196, 464, 26
+    DEFPUSHBUTTON "OK", IDOK, 358, 230, 52, 16
+    PUSHBUTTON "Cancel", IDCANCEL, 420, 230, 52, 16
+END
+
+IDD_HISTORY DIALOGEX 0, 0, 560, 280
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Local request history"
+FONT 9, "Segoe UI"
+BEGIN
+    CONTROL "&Record completed requests for this session (off by default)", IDC_HISTORY_RECORD, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 8, 8, 544, 16
+    LTEXT "Metadata only: UTC time, method, origin, HTTP status and elapsed time. Paths, queries, credentials, headers and bodies are omitted. Secret-bearing collections omit the endpoint entirely.", IDC_STATIC, 8, 30, 544, 28
+    EDITTEXT IDC_HISTORY_TEXT, 8, 64, 544, 180, ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL | ES_AUTOVSCROLL | WS_HSCROLL | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "&Clear history", IDC_HISTORY_CLEAR, 8, 254, 90, 18
+    DEFPUSHBUTTON "Close", IDOK, 500, 254, 52, 18
 END
 
 IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62
@@ -207,9 +269,11 @@ BEGIN
    IDC_EASYPOST32   "EASYPOST32"
    IDS_APP_TITLE       "EasyPost32"
    IDR_MAINFRAME       "EasyPost32"
-   IDR_COLLECTION      "EasyPost32\nCollection\nCollection\n\n\nEasyPost32.Collection\nEasyPost32 Collection"
+   IDR_COLLECTION      "EasyPost32\nCollection\nCollection\nEasyPost32 collections (*.dp32.json)\n.dp32.json\nEasyPost32.Collection\nEasyPost32 Collection"
    ID_FILE_NEW         "Create an empty collection\nNew Collection"
-   ID_FILE_OPEN        "Opening collection files is available in Slice 5\nOpen"
+   ID_FILE_OPEN        "Open a local collection\nOpen"
+   ID_FILE_SAVE        "Save this collection locally\nSave"
+   ID_FILE_SAVE_AS     "Save this collection to another local file\nSave As"
    ID_FILE_CLOSE       "Close the active collection\nClose Collection"
    ID_REQUEST_SEND     "Send the current request\nSend"
    ID_REQUEST_CANCEL   "Cancel the current request\nCancel"

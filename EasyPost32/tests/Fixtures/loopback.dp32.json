@@ -1,0 +1,51 @@
+{
+  "format": "EasyPost32.collection",
+  "version": 1,
+  "id": "loopback-sample",
+  "name": "Local loopback examples",
+  "variables": [
+    { "name": "baseUrl", "value": "http://127.0.0.1:8080", "secret": false },
+    { "name": "message", "value": "synthetic sample", "secret": false }
+  ],
+  "items": [
+    {
+      "id": "loopback-requests",
+      "name": "Requests",
+      "type": "folder",
+      "items": [
+        {
+          "id": "loopback-inspect",
+          "name": "Inspect GET",
+          "type": "request",
+          "request": {
+            "method": "GET", "url": "{{baseUrl}}/inspect?literal=%2F+a",
+            "headersText": "X-Repeat: one\r\nX-Repeat: two", "body": "", "verifyTls": true
+          }
+        },
+        {
+          "id": "loopback-echo",
+          "name": "Echo raw JSON",
+          "type": "request",
+          "request": {
+            "method": "POST", "url": "{{baseUrl}}/echo",
+            "headersText": "Content-Type: application/json",
+            "body": "{\r\n\t\"message\" : \"{{message}}\"\r\n}\r\n  ", "verifyTls": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "loopback-errors", "name": "Errors and delays", "type": "folder",
+      "items": [
+        {
+          "id": "loopback-500", "name": "HTTP 500", "type": "request",
+          "request": { "method": "GET", "url": "{{baseUrl}}/status/500", "headersText": "", "body": "", "verifyTls": true }
+        },
+        {
+          "id": "loopback-delay", "name": "Slow response", "type": "request",
+          "request": { "method": "GET", "url": "{{baseUrl}}/delay/3000", "headersText": "", "body": "", "verifyTls": true }
+        }
+      ]
+    }
+  ]
+}

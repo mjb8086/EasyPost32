@@ -12,4 +12,5 @@ struct RequestDraft
     std::string headersText;
     std::string body;
     bool verifyTls = true;
+    bool operator==(const RequestDraft&) const = default;
 };

@@ -1,4 +1,4 @@
-# EasyPost32 — Slice 4 Send and response viewer
+# EasyPost32 — Slice 5 collections, variables and history
 
 This project uses C++20, MFC document/view and classic MDI child windows.
 Each collection has a separate `CCollectionDoc` and `CCollectionFrame`, with a
@@ -14,13 +14,18 @@ plain-C++ `RequestDraft` values, with UTF-8 text and explicit conversion at
 the Windows UI boundary. Repeated headers and unfinished header lines remain
 editable source text; raw bodies are never parsed or reformatted.
 
-**All edits are in memory only. Closing a collection discards its edits.**
+**Collections can now be saved as versioned `.dp32.json` files.** File > Open,
+Save and Save As use native Windows file dialogs. Modified documents prompt to
+save on close. Nested folders and requests retain their names, order, method,
+URL/header/body source and TLS setting across reopen. Responses are never saved
+in collection files.
 Send snapshots the current request and runs libcurl on a worker. The response
 pane displays HTTP status, elapsed milliseconds, received/sent body bytes,
 redirect count, final response headers and the unformatted UTF-8 body. Binary
 or invalid UTF-8 content gets a safe placeholder. HTTP 4xx/5xx responses retain
 their normal status and body; transport failures and partial responses are
-identified separately. No request or response content is logged or persisted.
+identified separately. Request/response bodies and credentials are never history
+fields; only explicitly saved collection source is persisted.
 
 Use Send or **Request > Send (Ctrl+Enter)**; **Cancel (Esc)** interrupts a pending
 transfer. Each request has its own pending/result state; repeated Send is blocked
@@ -38,8 +43,29 @@ cancels its jobs without waiting on the UI thread. Exiting cancels and joins
 remaining workers before libcurl cleanup; OS DNS/TLS calls can briefly delay
 process exit before observing cancellation.
 
-Open remains disabled. Collection files, variables, history and import/export
-have not been implemented. The application has no product CLI or local server.
+The Request menu can create folders/requests, rename the selected item (F2),
+duplicate subtrees, delete items, and move siblings up/down. Select a folder to
+create children inside it, or select the root to create top-level items. Rename
+the root to change the collection's stored name. Cross-folder moves are deferred.
+
+Request > Collection Variables edits case-sensitive `{{name}}` placeholders.
+They resolve only in a Send snapshot of the URL, headers and raw body. Missing
+names, duplicate definitions, malformed placeholders, nested substitutions and
+empty required secrets fail before starting HTTP work. No automatic URL encoding
+or JSON formatting occurs. **Marked secret values stay in memory and are omitted
+on save; reopening requires re-entry.** Ordinary variables, headers and bodies
+are saved as plaintext, as disclosed in the editor and Variables dialog.
+
+File > Local History offers session-only opt-in recording, initially off, with
+a viewer and Clear button. It stores at most 500 metadata entries under
+`%LOCALAPPDATA%\EasyPost32\history.json`. Paths, queries, fragments, user info,
+headers and bodies are omitted. Secret-bearing collections omit the entire
+endpoint. Recording must be enabled both at Send and at completion.
+Closing a pending collection cancels its work without retaining its response in
+history. See [the native format and privacy contract](docs/CollectionFormat.md).
+
+Import/export is reserved for Slice 6. The application has no product CLI,
+server, sign-in, telemetry or startup network request.
 
 See [Http/README.md](Http/README.md) for HTTP behavior, dependency setup, the
 single-command integration tests and their loopback-only TLS fixtures.
@@ -159,7 +185,7 @@ a scoped command approval for this script to avoid repeated desktop prompts.
    between panes, and Enter inserting newlines in the raw body.
 5. Confirm Send is disabled for an empty URL and enabled after entering one.
    Before the first Send, the response pane says Ready and contains no response.
-6. Close the collection only when its temporary edits are no longer needed.
+6. Save the collection or choose Discard on the normal unsaved-change prompt.
 
 ## Slice 4 GUI integration and manual checks
 
@@ -205,6 +231,40 @@ For manual acceptance, use the printed HTTP address as `<base>`:
 The native tests also cover timeout, response/header limits, redirects and TLS
 hostname/trust validation. Arbitrary DPI changes, assistive technology and live
 public services still require separate manual verification.
+
+## Slice 5 collection acceptance checks
+
+The same `TestHttp.ps1` commands now include persistence, variable and history
+tests in a separate MFC-free `Core` library. `TestGuiHttp.ps1` additionally
+drives the real Save/Open dialogs, nested item commands, Variables and History
+dialogs, and unsaved-change prompts. Synthetic collection files and overridden
+`LOCALAPPDATA` live only inside the runner's temporary fixture directory; tests
+do not touch the developer's normal history.
+
+For manual testing, run `tests\TestGuiHttp.ps1 -SkipBuild -Manual`, then:
+
+1. Open [tests/Fixtures/loopback.dp32.json](tests/Fixtures/loopback.dp32.json).
+   Set `baseUrl` in Collection Variables to the printed HTTP address. Select
+   Echo raw JSON and Send; the displayed/stored template must retain its braces
+   and whitespace while the response contains the resolved `message`.
+2. Create nested folders and named requests; duplicate a folder, rename it and
+   move siblings. Save As to a new `.dp32.json`, close and reopen it. Confirm
+   nesting, ordering, raw source, ordinary variables and TLS settings survive.
+3. Save As to a second file and open the first alongside it. Edit one, close it
+   and exercise Cancel, Save and Discard. The other document must stay unchanged.
+4. Add a marked secret variable, reference it in a header, and Send. Save and
+   inspect the JSON: the secret row has no value. Reopen and Send again; it must
+   request a session value. Missing `{{names}}` must give actionable errors.
+5. Open Local History, explicitly enable recording, then send to fixture URLs
+   with synthetic query tokens. Check the viewer/file for metadata only. A
+   marked secret anywhere in a collection suppresses its entire endpoint.
+   Clear History and confirm the file's entries array is empty.
+6. Try malformed JSON or an unsupported version in a separate test file. The
+   error must leave other open documents intact. A locked destination must fail
+   Save without replacing its previous complete contents.
+
+The on-disk schema, limits, variable rules, atomic-save behavior and history
+fields are documented in [docs/CollectionFormat.md](docs/CollectionFormat.md).
 
 ## Verification recorded during implementation
 
@@ -257,15 +317,36 @@ public services still require separate manual verification.
   up. Ctrl+Enter, reverse traversal, arbitrary DPI/monitor changes, accessibility
   and Visual Studio debugger launch have not been manually exercised.
 
-The final verification commands, run from this directory, were:
+- Slice 5 full x64 Debug and Release solution builds passed with MSVC v145,
+  C++20 and no reported compiler warnings/errors. Both configurations passed
+  **53 native tests** and **124 GUI checks**, each with exit code 0. All six
+  Slice 5 acceptance checks passed: durable ordered/nested collections,
+  independent saved documents and close prompts, send-only substitution,
+  actionable unresolved-variable errors, clearable metadata-only history, and
+  safe rejection of malformed/unknown-version files. Secret omission and
+  re-entry were checked in both native and GUI tests. The native suite also
+  verifies failed atomic replacement retains the original file.
+- Debug collection/response screenshots were inspected at the current display
+  scale. The native Save As workflow overrides MFC's default failure cleanup,
+  which would otherwise delete a destination after a failed save. Draft edits
+  update only the selected tree label, avoiding repeated whole-model searches
+  for every node in a large collection. Deleted subtrees cancel their jobs and
+  release their response state. Test history lives in an isolated child
+  `LOCALAPPDATA`; the developer's normal history is not modified.
+- PowerShell/Python syntax and whitespace checks passed. Temporary fixtures,
+  test instances and diagnostic files were cleaned up after verification.
+  Arbitrary DPI/monitor changes, assistive technology, manual Ctrl+Enter/
+  reverse navigation and Visual Studio debugger launch remain unverified.
+
+The final Slice 5 verification commands, run from this directory, were:
 
 ```powershell
 & $msbuild .\EasyPost32.slnx /p:Configuration=Debug /p:Platform=x64 /m /nologo /verbosity:minimal
 & $msbuild .\EasyPost32.slnx /p:Configuration=Release /p:Platform=x64 /m /nologo /verbosity:minimal
 powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug -SkipBuild
 powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Release -SkipBuild
-powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -SkipBuild -Screenshot .\build\slice4-debug.png
-powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\slice4-release.png
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -SkipBuild -Screenshot .\build\slice5-debug.png
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\slice5-release.png
 git diff --check
 ```
 
