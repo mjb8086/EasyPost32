@@ -4,6 +4,7 @@ EasyPost32 is the Postman demake. Create requests in JSON or XML and send them w
 
 ![pre1.0 screenshot](assets/screenshot-pre1.0.png)
 
+- MDI interface to manage multiple collections
 - No Sign In required. In fact, there isn't anything to sign into. EasyPost32 is 100% local!
 - Create and save collections
 - Import OpenAPI and Postman collections
