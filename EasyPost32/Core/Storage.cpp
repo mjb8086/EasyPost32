@@ -33,6 +33,27 @@ nlohmann::json HistoryJson(const std::vector<HistoryEntry>& entries)
             {"status", entry.status}, {"elapsedMs", entry.elapsedMs}, {"transportError", entry.transportError} });
     return { {"format", "EasyPost32.history"}, {"version", 1}, {"entries", rows} };
 }
+size_t DetailsBytes(const HistoryDetails& details)
+{
+    const auto& request = details.request;
+    const auto& response = details.response;
+    size_t bytes = request.name.size() + request.method.size() + request.url.size() +
+        request.headersText.size() + request.body.size() + response.statusText.size() +
+        response.finalUrl.size() + response.rawHeaders.size() + response.body.size();
+    for (const auto& [name, value] : response.headers) bytes += name.size() + value.size();
+    if (response.error) bytes += response.error->message.size();
+    return bytes;
+}
+void TrimDetails(std::vector<HistoryEntry>& entries)
+{
+    size_t bytes = 0;
+    for (const auto& entry : entries) if (entry.details) bytes += DetailsBytes(*entry.details);
+    for (auto& entry : entries)
+    {
+        if (bytes <= HistoryStore::DetailsBudget) break;
+        if (entry.details) { bytes -= DetailsBytes(*entry.details); entry.details.reset(); }
+    }
+}
 }
 std::string ReadTextFile(const std::filesystem::path& path, size_t maxBytes)
 {
@@ -124,28 +145,35 @@ void HistoryStore::Load()
             ValidateHistory(entry);
             entries.push_back(std::move(entry));
         }
+        for (auto& entry : entries) entry.id = m_nextId++;
         m_entries = std::move(entries);
+        ++m_revision;
     }
     catch (const nlohmann::json::exception&) { throw std::runtime_error("Invalid local history JSON."); }
 }
-void HistoryStore::Record(const HistoryEntry& entry)
+void HistoryStore::Record(const HistoryEntry& entry, bool explicitResend)
 {
-    if (!enabled) return;
+    if (!enabled && !explicitResend) return;
     auto safe = entry;
     safe.url = HistoryUrl(entry.url, {});
+    safe.id = m_nextId;
     ValidateHistory(safe);
     auto next = m_entries;
     next.push_back(std::move(safe));
     if (next.size() > 500) next.erase(next.begin());
+    TrimDetails(next);
     Require(!m_file.empty(), "Local history storage is unavailable.");
     std::filesystem::create_directories(m_file.parent_path());
     WriteTextAtomic(m_file, HistoryJson(next).dump(2) + "\n");
     m_entries = std::move(next);
+    ++m_nextId;
+    ++m_revision;
 }
 void HistoryStore::Clear()
 {
     // Persist an empty valid history; failure retains the visible entries.
     if (!m_file.empty() && std::filesystem::exists(m_file)) WriteTextAtomic(m_file, HistoryJson({}).dump(2) + "\n");
     m_entries.clear();
+    ++m_revision;
 }
 }

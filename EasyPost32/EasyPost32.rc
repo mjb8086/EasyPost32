@@ -210,16 +210,24 @@ BEGIN
     PUSHBUTTON "Cancel", IDCANCEL, 420, 230, 52, 16
 END
 
-IDD_HISTORY DIALOGEX 0, 0, 560, 280
-STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+IDD_HISTORY DIALOGEX 0, 0, 700, 470
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX
 CAPTION "Local request history"
 FONT 9, "Segoe UI"
 BEGIN
-    CONTROL "&Record completed requests for this session (off by default)", IDC_HISTORY_RECORD, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 8, 8, 544, 16
-    LTEXT "Metadata only: UTC time, method, origin, HTTP status and elapsed time. Paths, queries, credentials, headers and bodies are omitted. Secret-bearing collections omit the endpoint entirely.", IDC_STATIC, 8, 30, 544, 28
-    EDITTEXT IDC_HISTORY_TEXT, 8, 64, 544, 180, ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL | ES_AUTOVSCROLL | WS_HSCROLL | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "&Clear history", IDC_HISTORY_CLEAR, 8, 254, 90, 18
-    DEFPUSHBUTTON "Close", IDOK, 500, 254, 52, 18
+    CONTROL "&Record collection sends for this session (off by default)", IDC_HISTORY_RECORD, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 8, 8, 684, 16
+    LTEXT "Full request/response details may contain credentials and are kept in memory for this session only. Disk history contains sanitized metadata only. Select a row to inspect it; Resend records a new result.", IDC_HISTORY_NOTICE, 8, 28, 684, 28
+    CONTROL "", IDC_HISTORY_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 60, 684, 152
+    LTEXT "Sent &URL:", IDC_HISTORY_URL_LABEL, 8, 220, 45, 14
+    EDITTEXT IDC_HISTORY_URL, 58, 218, 634, 18, ES_AUTOHSCROLL | ES_READONLY | WS_TABSTOP
+    EDITTEXT IDC_HISTORY_SUMMARY, 8, 242, 684, 34, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    CONTROL "", IDC_HISTORY_TABS, "SysTabControl32", WS_TABSTOP, 8, 282, 684, 20
+    EDITTEXT IDC_HISTORY_DETAILS, 8, 306, 684, 126, ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL | ES_AUTOVSCROLL | WS_HSCROLL | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "&Clear history", IDC_HISTORY_CLEAR, 8, 444, 78, 18
+    PUSHBUTTON "&Resend selected", IDC_HISTORY_RESEND, 94, 444, 92, 18
+    PUSHBUTTON "Cancel &send", IDC_HISTORY_CANCEL, 194, 444, 78, 18
+    LTEXT "", IDC_HISTORY_PROGRESS, 280, 446, 344, 16
+    DEFPUSHBUTTON "Close", IDOK, 636, 444, 56, 18
 END
 
 IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62

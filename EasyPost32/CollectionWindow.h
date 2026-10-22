@@ -33,6 +33,7 @@ public:
         bool cancelling = false;
         bool recordHistory = false;
         easypost::HistoryEntry history;
+        std::optional<RequestDraft> historyDraft;
         bool Pending() const { return job && !completionDispatched; }
     };
     const RequestRun& CurrentRun() const;

@@ -1,4 +1,4 @@
-# EasyPost32 — Slice 6 JSON interoperability
+# EasyPost32 — native Windows HTTP client
 
 This project uses C++20, MFC document/view and classic MDI child windows.
 Each collection has a separate `CCollectionDoc` and `CCollectionFrame`, with a
@@ -24,8 +24,9 @@ pane displays HTTP status, elapsed milliseconds, received/sent body bytes,
 redirect count, final response headers and the unformatted UTF-8 body. Binary
 or invalid UTF-8 content gets a safe placeholder. HTTP 4xx/5xx responses retain
 their normal status and body; transport failures and partial responses are
-identified separately. Request/response bodies and credentials are never history
-fields; only explicitly saved collection source is persisted.
+identified separately. Request/response bodies and credentials are never written
+to the history file. Explicitly enabled history recording retains full details
+in session memory for inspection and resend.
 
 Use Send or **Request > Send (Ctrl+Enter)**; **Cancel (Esc)** interrupts a pending
 transfer. Each request has its own pending/result state; repeated Send is blocked
@@ -56,13 +57,27 @@ or JSON formatting occurs. **Marked secret values stay in memory and are omitted
 on save; reopening requires re-entry.** Ordinary variables, headers and bodies
 are saved as plaintext, as disclosed in the editor and Variables dialog.
 
-File > Local History offers session-only opt-in recording, initially off, with
-a viewer and Clear button. It stores at most 500 metadata entries under
-`%LOCALAPPDATA%\EasyPost32\history.json`. Paths, queries, fragments, user info,
-headers and bodies are omitted. Secret-bearing collections omit the entire
-endpoint. Recording must be enabled both at Send and at completion.
-Closing a pending collection cancels its work without retaining its response in
-history. See [the native format and privacy contract](docs/CollectionFormat.md).
+File > Local History uses a resizable native report table, with newest results
+at the top and columns for UTC time, method, endpoint, result, elapsed time and
+detail availability. Select a row to inspect its sent URL, request headers/body
+and response headers/body in read-only tabs. **Resend selected** sends the original
+resolved snapshot (including its original TLS setting) on a background worker,
+then adds and selects a new top row without changing the original or any
+collection editor. Cancel send interrupts the worker. Closing history or clearing
+it cancels a history resend without leaving a dangling completion callback.
+
+Automatic collection recording remains off by default and must be enabled both
+at Send and at completion. An explicit history Resend records that one result
+even when automatic recording is off. Up to 500 sanitized metadata entries are
+saved under `%LOCALAPPDATA%\EasyPost32\history.json`; the file still contains no
+paths, queries, user info, headers, bodies or credentials. Secret-bearing
+collections omit the endpoint entirely. Full snapshots are **session-only** and
+may contain credentials; the dialog discloses this. Captured detail buffers have
+a 64 MiB budget, releasing the oldest details while retaining their metadata.
+Rows from previous launches, or with released details, say **Metadata only** and
+cannot be resent. Clear removes both the table and session details. Closing a
+pending collection cancels its work without retaining its response in history.
+See [the format and privacy contract](docs/CollectionFormat.md#local-history).
 
 **File > Import** opens Postman Collection v2.1 JSON and OpenAPI 3.0/3.1 JSON as
 independent, unsaved collections. **File > Export Postman v2.1 JSON** exports
@@ -408,6 +423,44 @@ git diff --check
 For a focused GUI interoperability run, add `-InteropOnly` to `TestGuiHttp.ps1`;
 it passes 32 checks (including launch/exit) and validates its actual export.
 The complete GUI command above always includes all earlier slice regressions.
+
+History table refinement verification (2026-10-22):
+
+- Full x64 Debug and Release solution builds passed without reported compiler
+  warnings/errors. Both configurations passed **78 native tests** and **174 GUI
+  checks**, exit code 0; the existing offline Postman schema checks also passed.
+- Four new native checks cover session snapshots without on-disk credential/body
+  leakage, explicit one-result resend recording, snapshot memory eviction/Clear,
+  and failed atomic writes retaining the original snapshot and revision.
+- Twenty-two new GUI checks cover the native six-column table, sent URL and all
+  four detail tabs, exact resend bytes despite subsequent editor changes,
+  duplicate suppression, newest-first insertion/selection, preserved original
+  results, failed history saves retaining an inspectable new response, safe
+  binary display, live refresh, cancellation and clearing/closing while pending.
+- PowerShell syntax and whitespace checks passed. The captured history dialog
+  was visually inspected at the current display scale. Arbitrary monitor/DPI
+  changes and assistive technology remain unverified. Full history bodies are
+  deliberately session-only; old metadata rows cannot reconstruct those details.
+
+Builds used the same MSBuild solution commands above. Final test commands were:
+
+```powershell
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Debug -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestHttp.ps1 -Configuration Release -SkipBuild
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Debug -SkipBuild -Screenshot .\build\history-debug.png
+powershell.exe -NoProfile -File .\tests\TestGuiHttp.ps1 -Configuration Release -SkipBuild -Screenshot .\build\history-release.png
+git diff --check
+```
+
+The GUI tests also capture `build/history-debug-history.png` and
+`build/history-release-history.png` for the new dialog. These images contain
+only synthetic loopback data and remain ignored build artifacts.
+
+To review manually, enable recording in File > Local History, close the dialog,
+send a request, then reopen history. Click its row and switch between request
+and response tabs. Edit the collection request, reopen history and resend the
+older row: the new top result should use the original sent values. Also try
+Cancel on a slow resend and Clear History while it is pending.
 
 The existing solution, project identity, icons and About dialog were retained.
 The original Win32 entry point was replaced because it supplied no MFC

@@ -158,12 +158,23 @@ function Test-Collections([IntPtr]$Main, [string]$HttpBase, [string]$WorkDirecto
     $historyRows = ($historyText | ConvertFrom-Json).entries
     Assert-Check ($historyRows.Count -eq 1 -and $historyRows[0].method -ceq 'POST' -and $historyRows[0].url -ceq '[endpoint omitted]' -and $historyRows[0].status -eq 200 -and @($historyRows[0].PSObject.Properties).Count -eq 6) 'Opt-in history records only six metadata fields and omits secret-bearing endpoints'
     Assert-Check (-not $historyText.Contains('synthetic-gui-secret') -and -not $historyText.Contains('synthetic-query') -and -not $historyText.Contains('Authorization') -and -not $historyText.Contains('synthetic-message')) 'History file contains no credentials, query token, headers or raw body'
+    # Change the live draft AFTER Send to prove history owns the original snapshot.
+    $originalHeaders = [MdiSmokeNative]::ControlText($headers)
+    [MdiSmokeNative]::ReplaceText($body, 'Edited after the original Send')
+    [MdiSmokeNative]::ReplaceText($headers, 'X-Later: changed')
+    [MdiSmokeNative]::ReplaceText($url, $HttpBase + '/status/500')
     $history = Open-Dialog 32783
-    Assert-Check ([MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($history, 1208)).Contains('POST')) 'History viewer displays completed request metadata'
+    . (Join-Path $PSScriptRoot 'HistoryChecks.ps1')
+    Test-HistoryDetails -Dialog $history -ExpectedBody $template.Replace('{{message}}', 'synthetic-message') -Screenshot $Screenshot
+    Assert-Check ([MdiSmokeNative]::ListText([MdiSmokeNative]::Control($history, 1212), 0, 1) -ceq 'POST') 'History table displays completed request metadata'
     [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1210), 0xF5, 0, 0) | Out-Null
-    Assert-Check ([MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($history, 1208)) -eq '' -and (([IO.File]::ReadAllText($historyPath) | ConvertFrom-Json).entries.Count -eq 0)) 'Clear history removes entries from both the viewer and local file'
-    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1209), 0xF5, 0, 0) | Out-Null
+    Assert-Check ([MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1212), 0x1004, 0, 0).ToInt64() -eq 0 -and (([IO.File]::ReadAllText($historyPath) | ConvertFrom-Json).entries.Count -eq 0)) 'Clear history removes entries from both the viewer and local file'
+    if ([MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1209), 0xF0, 0, 0).ToInt64() -ne 0) {
+        [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1209), 0xF5, 0, 0) | Out-Null
+    }
     Close-Dialog $history
+    [MdiSmokeNative]::ReplaceText($body, $template)
+    [MdiSmokeNative]::ReplaceText($headers, $originalHeaders)
     [MdiSmokeNative]::ReplaceText($url, '{{missing}}/inspect')
     Invoke-CommandId 32771
     Assert-Check ([MdiSmokeNative]::ControlText($summary).Contains('Unresolved variable: missing')) 'Unresolved GUI variable gives an actionable error before starting a worker'
@@ -212,4 +223,49 @@ function Test-Collections([IntPtr]$Main, [string]$HttpBase, [string]$WorkDirecto
         }
         Assert-Check (@([MdiSmokeNative]::Children($client)).Count -eq 1 -and [MdiSmokeNative]::ControlText($body) -ceq $template) 'Malformed or unknown-version collection fails without damaging the open document'
     }
+    # Record a binary response and a slow request to verify table lifecycle paths.
+    [MdiSmokeNative]::Send($method, 0x14E, 0, 0) | Out-Null # These fixture routes accept GET.
+    [MdiSmokeNative]::Send([MdiSmokeNative]::GetParent($method), 0x111, (0x10000 -bor 1000), $method.ToInt64()) | Out-Null
+    $history = Open-Dialog 32783
+    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1209), 0xF5, 0, 0) | Out-Null
+    Close-Dialog $history
+    [MdiSmokeNative]::ReplaceText($url, $HttpBase + '/binary')
+    Invoke-CommandId 32771
+    Wait-Response $childA
+    $history = Open-Dialog 32783
+    [MdiSmokeNative]::SelectHistoryTab($history, 3)
+    Assert-Check ([MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($history, 1214)).StartsWith('[Binary or non-UTF-8 response:')) 'History displays binary responses safely without dumping their bytes'
+    Close-Dialog $history
+    [MdiSmokeNative]::ReplaceText($url, $HttpBase + '/delay/800')
+    Invoke-CommandId 32771
+    $history = Open-Dialog 32783
+    $historyTable = [MdiSmokeNative]::Control($history, 1212)
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    while ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -ne 2 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
+    Assert-Check ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -eq 2) 'History table refreshes when a collection request completes while the dialog is open'
+    [MdiSmokeNative]::SelectListRow($historyTable, 0)
+    $resend = [MdiSmokeNative]::Control($history, 1217)
+    [MdiSmokeNative]::Send($resend, 0xF5, 0, 0) | Out-Null
+    Assert-Check (-not [MdiSmokeNative]::IsWindowEnabled($resend) -and [MdiSmokeNative]::IsWindowEnabled([MdiSmokeNative]::Control($history, 1218))) 'Slow history resend is asynchronous and offers Cancel'
+    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1218), 0xF5, 0, 0) | Out-Null
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    while ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -ne 3 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
+    Assert-Check ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -eq 3 -and [MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($history, 1216)).Contains('Transport error:')) 'Cancelling a history resend appends its actual transport error result'
+    [MdiSmokeNative]::SelectListRow($historyTable, 1) # The completed slow source row.
+    [MdiSmokeNative]::Send($resend, 0xF5, 0, 0) | Out-Null
+    Close-Dialog $history
+    $history = Open-Dialog 32783
+    $historyTable = [MdiSmokeNative]::Control($history, 1212)
+    Start-Sleep -Milliseconds 150
+    Assert-Check ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -eq 3) 'Closing history cancels its pending resend safely without a late extra row'
+    [MdiSmokeNative]::SelectListRow($historyTable, 1)
+    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1217), 0xF5, 0, 0) | Out-Null
+    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1210), 0xF5, 0, 0) | Out-Null
+    Start-Sleep -Milliseconds 150
+    Assert-Check ([MdiSmokeNative]::Send($historyTable, 0x1004, 0, 0).ToInt64() -eq 0 -and -not [MdiSmokeNative]::IsWindowEnabled([MdiSmokeNative]::Control($history, 1217)) -and [MdiSmokeNative]::ControlText([MdiSmokeNative]::Control($history, 1214)) -eq '') 'Clear cancels pending history work and removes table rows and detailed content'
+    [MdiSmokeNative]::Send([MdiSmokeNative]::Control($history, 1209), 0xF5, 0, 0) | Out-Null
+    Close-Dialog $history
+    [MdiSmokeNative]::ReplaceText($url, '{{baseUrl}}/inspect?token=synthetic-query')
+    [MdiSmokeNative]::Send($method, 0x14E, 1, 0) | Out-Null
+    [MdiSmokeNative]::Send([MdiSmokeNative]::GetParent($method), 0x111, (0x10000 -bor 1000), $method.ToInt64()) | Out-Null
 }

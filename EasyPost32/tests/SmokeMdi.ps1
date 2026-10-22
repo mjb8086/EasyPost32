@@ -68,6 +68,66 @@ public static class MdiSmokeNative
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint process);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")] static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, UIntPtr size, uint allocation, uint protection);
+    [DllImport("kernel32.dll")] static extern bool VirtualFreeEx(IntPtr process, IntPtr address, UIntPtr size, uint type);
+    [DllImport("kernel32.dll")] static extern bool WriteProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr written);
+    [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr read);
+    [StructLayout(LayoutKind.Sequential)]
+    struct ListItem {
+        public uint Mask; public int Item, SubItem; public uint State, StateMask;
+        public IntPtr Text; public int TextLength, Image; public IntPtr Data;
+        public int Indent, Group; public uint Columns; public IntPtr ColumnArray, ColumnFormats; public int GroupIndex;
+    }
+    // Win32 list-view item messages require pointers in the target process, unlike
+    // WM_GETTEXT. Allocate only in the private GUI instance under test.
+    static byte[] StructureBytes<T>(T value) {
+        int size = Marshal.SizeOf(typeof(T)); IntPtr buffer = Marshal.AllocHGlobal(size);
+        try { Marshal.StructureToPtr(value, buffer, false); var bytes = new byte[size]; Marshal.Copy(buffer, bytes, 0, size); return bytes; }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+    static void RemoteMessage(IntPtr window, Func<IntPtr, byte[]> make, Action<IntPtr, IntPtr> action) {
+        uint owner; GetWindowThreadProcessId(window, out owner);
+        IntPtr process = OpenProcess(0x38, false, owner);
+        if (process == IntPtr.Zero) throw new Exception("Cannot access private GUI control memory");
+        IntPtr remote = IntPtr.Zero;
+        try {
+            remote = VirtualAllocEx(process, IntPtr.Zero, new UIntPtr(65536), 0x3000, 4);
+            if (remote == IntPtr.Zero) throw new Exception("Cannot allocate GUI control message");
+            byte[] bytes = make(remote); UIntPtr written;
+            if (!WriteProcessMemory(process, remote, bytes, new UIntPtr((uint)bytes.Length), out written) || written.ToUInt64() != (ulong)bytes.Length)
+                throw new Exception("Cannot write GUI control message");
+            action(process, remote);
+        } finally { if (remote != IntPtr.Zero) VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000); CloseHandle(process); }
+    }
+    public static string ListText(IntPtr list, int row, int column) {
+        string text = null;
+        RemoteMessage(list, remote => StructureBytes(new ListItem { Item = row, SubItem = column, Text = IntPtr.Add(remote, 256), TextLength = 16000 }),
+            (process, remote) => {
+                int count = checked((int)Send(list, 0x1073, row, remote.ToInt64()).ToInt64());
+                var bytes = new byte[count * 2]; UIntPtr read;
+                if (count > 0 && (!ReadProcessMemory(process, IntPtr.Add(remote, 256), bytes, new UIntPtr((uint)bytes.Length), out read) || read.ToUInt64() != (ulong)bytes.Length))
+                    throw new Exception("Cannot read GUI table cell");
+                text = Encoding.Unicode.GetString(bytes);
+            });
+        return text;
+    }
+    public static void SelectListRow(IntPtr list, int row) {
+        RemoteMessage(list, remote => StructureBytes(new ListItem { State = 3, StateMask = 3 }),
+            (process, remote) => { Send(list, 0x102B, row, remote.ToInt64()); });
+    }
+    public static void SelectHistoryTab(IntPtr dialog, int tab) {
+        IntPtr tabs = Control(dialog, 1213);
+        Send(dialog, 0x28, tabs.ToInt64(), 1); // WM_NEXTDLGCTL puts focus on the real tab control.
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            int current = (int)Send(tabs, 0x130B, 0, 0).ToInt64();
+            if (current == tab) return;
+            int key = current < tab ? 0x27 : 0x25;
+            Send(tabs, 0x100, key, 0); Send(tabs, 0x101, key, 0);
+        }
+        throw new Exception("History tab keyboard selection failed");
+    }
 
     public static string Text(IntPtr window) {
         var text = new StringBuilder(512); GetWindowText(window, text, text.Capacity); return text.ToString();

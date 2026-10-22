@@ -117,7 +117,34 @@ values. Multiline ordinary values can be authored in the JSON file if needed.
 
 File > Local History controls a session-only opt-in, initially off. It records
 completed sends while their collection remains open. Recording must be enabled
-both at Send and at completion. There is no automatic replay.
+both at Send and at completion. There is no automatic replay. The history window
+is a native resizable `CListCtrl` in report mode, with full-row selection, grid
+lines, draggable column headers and newest-first rows.
+
+For recorded requests, the session also retains immutable copies of the resolved
+sent draft and captured response. Selecting a row shows the original URL, HTTP
+status/transport error, timing, request headers/body and response headers/body.
+These read-only tabs do not update the collection editor. Binary/non-UTF-8
+response bodies show a safe placeholder. Display-only line-ending conversion
+does not alter the actual retained or resent bytes.
+
+**Resend selected** composes the resolved original draft directly, without looking
+up current collection variables or using later editor changes. Its original TLS
+validation setting is retained, with a visible warning if it was disabled. The
+background worker has Cancel and duplicate-send suppression. Completion adds a
+separate top row with the new response, leaving the original unchanged. Resend
+explicitly records this one result even if automatic collection recording is
+off; it never turns automatic recording on. Closing history or clearing it
+cancels its pending resend and discards its late completion safely.
+
+Full details are kept **only for this application session**, not encrypted or
+persisted. They may contain resolved secret values, cookies, headers and bodies;
+the dialog discloses this before recording. At most 64 MiB of captured request
+and response text/binary buffers is retained by the history store, releasing the
+oldest snapshots first while keeping their metadata. Active sends/selected
+views have their own working memory. Metadata-only rows loaded from disk, or
+whose details were released, clearly say so and cannot be resent. Thus an old
+metadata file cannot reconstruct historical request/response details.
 
 The file is `%LOCALAPPDATA%\EasyPost32\history.json`, with `format:
 "EasyPost32.history"`, `version: 1`, and an `entries` array. At most the newest
@@ -134,7 +161,8 @@ User information, URL paths, queries and fragments are omitted because they may
 contain tokens. The entire endpoint is omitted for any collection containing a
 marked secret variable, including secrets used to build a hostname. Invalid or
 oversized origins are also omitted. Request/response headers, bodies, credential
-values, variable names/values and full URLs are never history fields. The store
+values, variable names/values and full URLs are never fields in the on-disk
+history file. Runtime snapshot pointers and row identities are not serialized. The store
 sanitizes URLs again at its write boundary. Literal hostnames that a user types
 literally can still be visible as metadata. History is plaintext local metadata,
 bounded and atomically replaced. Clear History empties both memory and disk;
@@ -143,5 +171,8 @@ it does not promise forensic erasure of filesystem backups or old disk blocks.
 History is loaded only when its dialog is opened and is never a startup
 dependency. Errors leave visible entries intact and can be cleared in the
 dialog. A write failure disables recording and reports the problem without
-discarding the HTTP response. GUI tests override `LOCALAPPDATA` in their private
+discarding the HTTP response. If saving a history Resend fails, its actual new
+response remains inspectable as an unsaved result until another row is selected
+or the dialog is closed. Existing rows and the previous file remain intact.
+GUI tests override `LOCALAPPDATA` in their private
 child process, so they never modify the developer's real history.

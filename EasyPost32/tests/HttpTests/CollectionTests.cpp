@@ -261,6 +261,93 @@ void RunCollectionTests(const std::string& base, const std::function<void(const 
         Require(loaded.Entries().size() == 500 && loaded.Entries().front().elapsedMs == 1 &&
             loaded.Entries().back().elapsedMs == 500, "History retention did not discard the oldest entry");
     });
+    test("History details retain the sent snapshot but never reach the metadata file", []
+    {
+        Temporary temporary;
+        const auto path = temporary.path / "history.json";
+        HistoryStore store(path);
+        store.enabled = true;
+        RequestDraft draft{"Synthetic send"};
+        draft.method = "POST";
+        draft.url = "https://example.invalid/path?token=SYNTHETIC_QUERY";
+        draft.headersText = "Authorization: Bearer SYNTHETIC_HEADER\r\nX-Repeat: one\r\nX-Repeat: two";
+        draft.body = "{\r\n \"body\" : \"SYNTHETIC_REQUEST\"\r\n}\r\n";
+        draft.verifyTls = false;
+        HttpResponse response;
+        response.status = 200;
+        response.rawHeaders = "Set-Cookie: SYNTHETIC_COOKIE\r\n";
+        response.body = "SYNTHETIC_RESPONSE";
+        HistoryEntry entry{UtcTimestamp(), "POST", HistoryUrl(draft.url, {}), 200, 5};
+        entry.details = std::make_shared<const HistoryDetails>(HistoryDetails{draft, response});
+        store.Record(entry);
+        draft.body = "Changed after Send";
+        Require(store.Entries()[0].details->request.body.find("SYNTHETIC_REQUEST") != std::string::npos &&
+            !store.Entries()[0].details->request.verifyTls && store.Entries()[0].details->response.body == response.body,
+            "History lost its original request, response or TLS snapshot");
+        const auto text = ReadTextFile(path);
+        Require(text.find("SYNTHETIC_") == text.npos && json::parse(text)["entries"][0].size() == 6,
+            "Detailed history leaked into persistent metadata");
+        HistoryStore reopened(path); reopened.Load();
+        Require(reopened.Entries().size() == 1 && !reopened.Entries()[0].details && reopened.Entries()[0].id != 0 &&
+            !reopened.enabled, "Reopened metadata pretended to have request/response details");
+    });
+    test("Explicit history resend appends a new result without enabling automatic recording", []
+    {
+        Temporary temporary;
+        HistoryStore store(temporary.path / "history.json");
+        HistoryEntry original{UtcTimestamp(), "GET", "http://127.0.0.1", 200, 1};
+        original.details = std::make_shared<const HistoryDetails>(HistoryDetails{RequestDraft{"Original"}, HttpResponse{}});
+        store.Record(original);
+        Require(store.Entries().empty(), "Default recording was enabled");
+        store.Record(original, true);
+        const auto id = store.Entries()[0].id;
+        const auto revision = store.Revision();
+        auto replay = original; replay.status = 500; replay.elapsedMs = 2;
+        store.Record(replay, true);
+        Require(!store.enabled && store.Entries().size() == 2 && store.Entries()[0].id == id &&
+            store.Entries()[1].id > id && store.Entries()[0].status == 200 && store.Entries()[1].status == 500 &&
+            store.Revision() > revision, "Resend overwrote the original, reused an ID or enabled automatic recording");
+        store.Clear();
+        Require(store.Entries().empty(), "Clear retained replay rows");
+    });
+    test("History releases the oldest detailed snapshots at the memory budget while keeping metadata", []
+    {
+        Temporary temporary;
+        HistoryStore store(temporary.path / "history.json");
+        store.enabled = true;
+        std::weak_ptr<const HistoryDetails> oldest, newest;
+        for (int index = 0; index < 2; ++index)
+        {
+            HistoryDetails details;
+            details.request.body.assign(HistoryStore::DetailsBudget / 2 + 1, 'x');
+            HistoryEntry entry{UtcTimestamp(), "POST", "http://127.0.0.1", 200, index};
+            entry.details = std::make_shared<const HistoryDetails>(std::move(details));
+            if (index == 0) oldest = entry.details; else newest = entry.details;
+            store.Record(entry);
+        }
+        Require(store.Entries().size() == 2 && !store.Entries()[0].details && store.Entries()[1].details &&
+            oldest.expired() && !newest.expired(), "History memory budget did not release the oldest snapshot");
+        store.Clear();
+        Require(newest.expired(), "Clear retained session detail buffers");
+    });
+    test("Failed history writes retain the original visible detail snapshot and revision", []
+    {
+        Temporary temporary;
+        const auto path = temporary.path / "history.json";
+        HistoryStore store(path); store.enabled = true;
+        HistoryEntry entry{UtcTimestamp(), "GET", "http://127.0.0.1", 200, 1};
+        entry.details = std::make_shared<const HistoryDetails>();
+        store.Record(entry);
+        const auto original = store.Entries()[0].details;
+        const auto revision = store.Revision();
+        const auto handle = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        Require(handle != INVALID_HANDLE_VALUE, "Could not lock synthetic history file");
+        try { Reject([&] { store.Record(entry); }); }
+        catch (...) { CloseHandle(handle); throw; }
+        CloseHandle(handle);
+        Require(store.Entries().size() == 1 && store.Entries()[0].details == original && store.Revision() == revision,
+            "Failed save altered history snapshots");
+    });
     test("Checked-in loopback collection is a valid native sample", []
     {
         const auto sample = LoadCollection(std::filesystem::path("tests") / "Fixtures" / "loopback.dp32.json");

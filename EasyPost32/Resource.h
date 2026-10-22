@@ -40,6 +40,16 @@
 #define IDC_HISTORY_TEXT          1208
 #define IDC_HISTORY_RECORD        1209
 #define IDC_HISTORY_CLEAR         1210
+#define IDC_HISTORY_LIST          1212
+#define IDC_HISTORY_TABS          1213
+#define IDC_HISTORY_DETAILS       1214
+#define IDC_HISTORY_URL           1215
+#define IDC_HISTORY_SUMMARY       1216
+#define IDC_HISTORY_RESEND        1217
+#define IDC_HISTORY_CANCEL        1218
+#define IDC_HISTORY_PROGRESS      1219
+#define IDC_HISTORY_URL_LABEL     1220
+#define IDC_HISTORY_NOTICE        1221
 #define IDC_REQUEST_METHOD        1000
 #define IDC_REQUEST_URL           1001
 #define IDC_REQUEST_SEND          1002
@@ -75,7 +85,7 @@
 
 #define _APS_NEXT_RESOURCE_VALUE	136
 #define _APS_NEXT_COMMAND_VALUE		32787
-#define _APS_NEXT_CONTROL_VALUE		1212
+#define _APS_NEXT_CONTROL_VALUE		1222
 #define _APS_NEXT_SYMED_VALUE		110
 #endif
 #endif

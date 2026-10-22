@@ -51,10 +51,14 @@ void CCollectionDoc::Send()
         {
             easypost::HttpOptions options;
             options.verifyTls = CurrentRequest().verifyTls;
+            // Retain detailed history only after the user explicitly enables recording.
+            std::optional<RequestDraft> historyDraft;
+            if (theApp.history.enabled) historyDraft = resolved;
             auto job = theApp.httpJobs.Start(std::move(request), options);
             run = {};
             run.job = std::move(job);
             run.recordHistory = theApp.history.enabled;
+            run.historyDraft = std::move(historyDraft);
             if (run.recordHistory)
                 run.history = { easypost::UtcTimestamp(), resolved.method,
                     easypost::HistoryUrl(resolved.url, m_collection.variables) };
@@ -93,13 +97,21 @@ void CCollectionDoc::PollCompletions()
                 run.history.status = response.status;
                 run.history.elapsedMs = response.elapsed.count();
                 run.history.transportError = response.error.has_value();
-                try { theApp.history.Record(run.history); }
+                try
+                {
+                    auto entry = run.history;
+                    if (run.historyDraft)
+                        entry.details = std::make_shared<const easypost::HistoryDetails>(easypost::HistoryDetails{
+                            std::move(*run.historyDraft), response });
+                    theApp.history.Record(entry);
+                }
                 catch (const std::exception&)
                 {
                     theApp.history.enabled = false;
                     AfxMessageBox(L"Unable to save local history. Recording has been disabled; your response is still available.");
                 }
             }
+            run.historyDraft.reset();
         }
     theApp.httpJobs.Reap();
     if (changed) UpdateAllViews(nullptr, 1);
