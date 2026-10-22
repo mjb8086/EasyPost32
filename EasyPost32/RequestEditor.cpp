@@ -100,9 +100,7 @@ void CRequestEditor::UpdateActions()
     GetDlgItem(IDC_REQUEST_SEND)->EnableWindow(!run.Pending() && !document->CurrentRequest().url.empty());
     GetDlgItem(IDC_REQUEST_CANCEL)->EnableWindow(run.Pending() && !run.cancelling);
     GetDlgItem(IDC_VERIFY_TLS)->EnableWindow(hasRequest && !run.Pending());
-    SetDlgItemText(IDC_EDITOR_NOTICE, !hasRequest ? L"Select a request in the collection tree." : document->CurrentRequest().verifyTls ?
-        L"TLS verification enabled. Saved headers, bodies and ordinary variables are plaintext." :
-        L"WARNING: TLS certificate and hostname verification DISABLED. Saved request text is plaintext.");
+    SetDlgItemText(IDC_EDITOR_NOTICE, !hasRequest ? L"Select a request in the collection tree." : L"");
 }
 
 void CRequestEditor::OnSend() { static_cast<CCollectionDoc*>(GetDocument())->Send(); }

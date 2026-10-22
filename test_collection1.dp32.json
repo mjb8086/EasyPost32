@@ -1,0 +1,82 @@
+{
+  "format": "EasyPost32.collection",
+  "id": "loopback-sample",
+  "items": [
+    {
+      "id": "loopback-requests",
+      "items": [
+        {
+          "id": "loopback-inspect",
+          "name": "Inspect GET",
+          "request": {
+            "body": "{\r\n   ",
+            "headersText": "X-Repeat: one\r\nX-Repeat: two",
+            "method": "GET",
+            "url": "{{baseUrl}}/inspect?literal=%2F+a",
+            "verifyTls": true
+          },
+          "type": "request"
+        },
+        {
+          "id": "loopback-echo",
+          "name": "Echo raw JSON",
+          "request": {
+            "body": "{\r\n\t\"message\" : \"{{message}}\",\r\n        \"status_code\": 100,\r\n        \"version\": 1.01\r\n        \"entries\": [\"a\", \"b\", \"c\"]\r\n}\r\n  ",
+            "headersText": "Content-Type: application/json",
+            "method": "POST",
+            "url": "{{baseUrl}}/echo",
+            "verifyTls": true
+          },
+          "type": "request"
+        }
+      ],
+      "name": "Requests",
+      "type": "folder"
+    },
+    {
+      "id": "loopback-errors",
+      "items": [
+        {
+          "id": "loopback-500",
+          "name": "HTTP 500",
+          "request": {
+            "body": "",
+            "headersText": "",
+            "method": "GET",
+            "url": "{{baseUrl}}/status/500",
+            "verifyTls": true
+          },
+          "type": "request"
+        },
+        {
+          "id": "loopback-delay",
+          "name": "Slow response",
+          "request": {
+            "body": "",
+            "headersText": "",
+            "method": "GET",
+            "url": "{{baseUrl}}/delay/3000",
+            "verifyTls": true
+          },
+          "type": "request"
+        }
+      ],
+      "name": "Errors and delays",
+      "type": "folder"
+    }
+  ],
+  "name": "Local loopback examples",
+  "variables": [
+    {
+      "name": "baseUrl",
+      "secret": false,
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "name": "message",
+      "secret": false,
+      "value": "synthetic sample"
+    }
+  ],
+  "version": 1
+}
