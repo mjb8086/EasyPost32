@@ -12,6 +12,6 @@ EasyPost32 is the Postman demake. Create requests in JSON or XML and send them w
 - Sends HTTP verbs GET, POST,  PUT, DELETE, HEAD, OPTIONS
 - Native Windows application
 - Very lightweight. You'll struggle to locate it in Task Manager.
-- Not only 32-bit, but fully Win32!
+- The 32 doesn’t mean 32-bit, but fully Win32!
 
 The HTTP Client that's made to be forgotten. 
